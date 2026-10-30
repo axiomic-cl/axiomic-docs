@@ -29,3 +29,31 @@ jobs:
       - run: npm run check
       # Fails on a broken link or anchor, or an API error code without its /errores section.
       - run: npm run build
+
+  # Uploads the built site and its /solicitudes Function to Cloudflare Pages. The token holds
+  # only Cloudflare Pages: Edit; axiomic-infra (environments/docs) owns the project, the domain
+  # and the Function's bindings, which this deploy never replaces (no wrangler.toml here).
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: deploy-docs
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler pages deploy dist --project-name=axiomic-docs --branch=main --commit-hash="$GITHUB_SHA" --commit-dirty=false

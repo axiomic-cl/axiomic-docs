@@ -1,0 +1,150 @@
+---
+// The «Pedir acceso» form. It asks /solicitudes whether it is on (production only), loads
+// Turnstile only then, and posts JSON. Without the Function it stays hidden and the page
+// keeps the email fallback.
+---
+
+<form class="ax-access" data-access-form hidden novalidate>
+	<label>
+		Correo
+		<input name="email" type="email" autocomplete="email" maxlength="254" required />
+	</label>
+	<label>
+		Nombre
+		<input name="name" autocomplete="name" maxlength="120" required />
+	</label>
+	<label>
+		<span>Empresa <span class="ax-optional">(opcional)</span></span>
+		<input name="company" autocomplete="organization" maxlength="120" />
+	</label>
+	<label>
+		¿Qué quieres construir?
+		<textarea name="intended_use" rows="4" maxlength="1000" required></textarea>
+	</label>
+	<div data-turnstile></div>
+	<button type="submit">Pedir mi llave de prueba</button>
+	<p class="ax-status" role="status" aria-live="polite"></p>
+</form>
+
+<script>
+	const MESSAGES: Record<string, string> = {
+		sent: 'Listo: recibimos tu solicitud. Te escribimos con tu llave de prueba.',
+		invalid: 'Revisa los campos marcados.',
+		challenge_failed: 'No pudimos verificar el desafío. Inténtalo de nuevo.',
+		failed: 'No pudimos enviar tu solicitud. Escríbenos a contact@axiomic.cl.',
+	};
+
+	type Turnstile = {
+		render: (element: HTMLElement, options: Record<string, unknown>) => string;
+		reset: (id: string) => void;
+	};
+
+	function loadTurnstile(): Promise<Turnstile> {
+		return new Promise((resolve, reject) => {
+			const script = document.createElement('script');
+			script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+			script.async = true;
+			script.onload = () => resolve((window as unknown as { turnstile: Turnstile }).turnstile);
+			script.onerror = reject;
+			document.head.append(script);
+		});
+	}
+
+	async function start(form: HTMLFormElement) {
+		const config = await fetch('/solicitudes').then((response) => (response.ok ? response.json() : null)).catch(() => null);
+		if (!config?.available) return;
+		const turnstile = await loadTurnstile().catch(() => null);
+		if (!turnstile) return;
+		const status = form.querySelector<HTMLElement>('.ax-status')!;
+		const button = form.querySelector<HTMLButtonElement>('button')!;
+		let token = '';
+		const widget = turnstile.render(form.querySelector<HTMLElement>('[data-turnstile]')!, {
+			sitekey: config.site_key,
+			action: config.action,
+			language: 'es',
+			callback: (value: string) => (token = value),
+			'expired-callback': () => (token = ''),
+		});
+		form.hidden = false;
+		document.querySelector('[data-access-fallback]')?.setAttribute('hidden', '');
+
+		form.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			form.querySelectorAll('[aria-invalid]').forEach((field) => field.removeAttribute('aria-invalid'));
+			button.disabled = true;
+			status.textContent = 'Enviando…';
+			const body = Object.fromEntries(new FormData(form));
+			const response = await fetch('/solicitudes', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...body, turnstile_token: token }),
+			}).catch(() => null);
+			const result = response ? await response.json().catch(() => ({})) : {};
+			if (response?.status === 201) {
+				form.reset();
+				form.querySelectorAll('input, textarea, button').forEach((field) => field.setAttribute('disabled', ''));
+				status.textContent = MESSAGES.sent;
+				return;
+			}
+			for (const name of result.fields ?? []) {
+				form.querySelector(`[name="${CSS.escape(name)}"]`)?.setAttribute('aria-invalid', 'true');
+			}
+			status.textContent = MESSAGES[result.error] ?? MESSAGES.failed;
+			token = '';
+			turnstile.reset(widget);
+			button.disabled = false;
+		});
+	}
+
+	document.querySelectorAll<HTMLFormElement>('[data-access-form]').forEach((form) => void start(form));
+</script>
+
+<style>
+	.ax-access {
+		display: grid;
+		gap: 1rem;
+		max-width: 32rem;
+	}
+	/* The grid display would otherwise override the hidden attribute. */
+	.ax-access[hidden] {
+		display: none;
+	}
+	.ax-access label {
+		display: grid;
+		gap: 0.35rem;
+		font-weight: 600;
+	}
+	.ax-access input,
+	.ax-access textarea {
+		font: inherit;
+		font-weight: 400;
+		line-height: 1.4;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.5rem;
+		background: var(--sl-color-black);
+		color: var(--sl-color-white);
+	}
+	.ax-access [aria-invalid='true'] {
+		border-color: var(--sl-color-red);
+	}
+	.ax-access button {
+		justify-self: start;
+		padding: 0.65rem 1.25rem;
+		border: 0;
+		border-radius: 999px;
+		background: #0354f6;
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.ax-access button:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.ax-optional {
+		font-weight: 400;
+		color: var(--sl-color-gray-3);
+	}
+</style>
