@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { ACTION, HOSTNAME, describeForm, passesChallenge, readBounded, submit, validate } from './request.mjs';
 
 const NOW = new Date('2026-10-30T12:00:00Z');
+const background = [];
+const waitUntil = (promise) => background.push(promise);
 
 function fakeDb() {
 	const statements = [];
@@ -44,7 +46,7 @@ const env = (db = fakeDb()) => ({ ACCESS_DB: db, TURNSTILE_SITE_KEY: 'site', TUR
 test('a valid, human request is stored and nothing is echoed', async () => {
 	const db = fakeDb();
 	const { calls, fetchImpl } = siteverify(PASS);
-	const response = await submit(post(GOOD), env(db), { now: NOW, fetchImpl });
+	const response = await submit(post(GOOD), env(db), { now: NOW, waitUntil, fetchImpl });
 	assert.equal(response.status, 201);
 	assert.deepEqual(await response.json(), { ok: true });
 	assert.deepEqual(calls[0].body, { secret: 'secret', response: 'tok', remoteip: '203.0.113.7' });
@@ -54,7 +56,7 @@ test('a valid, human request is stored and nothing is echoed', async () => {
 
 test('requests older than 90 days are deleted on every write', async () => {
 	const db = fakeDb();
-	await submit(post(GOOD), env(db), { now: NOW, fetchImpl: siteverify(PASS).fetchImpl });
+	await submit(post(GOOD), env(db), { now: NOW, waitUntil, fetchImpl: siteverify(PASS).fetchImpl });
 	const purge = db.statements.find((s) => s.sql.startsWith('DELETE'));
 	assert.deepEqual(purge.params, ['2026-08-01T12:00:00.000Z']);
 });
@@ -62,25 +64,25 @@ test('requests older than 90 days are deleted on every write', async () => {
 test('a failed or foreign challenge stores nothing', async () => {
 	for (const verdict of [{ success: false }, { ...PASS, hostname: 'evil.example' }, { ...PASS, action: 'otra' }]) {
 		const db = fakeDb();
-		const response = await submit(post(GOOD), env(db), { now: NOW, fetchImpl: siteverify(verdict).fetchImpl });
+		const response = await submit(post(GOOD), env(db), { now: NOW, waitUntil, fetchImpl: siteverify(verdict).fetchImpl });
 		assert.equal(response.status, 403);
 		assert.equal(db.statements.length, 0);
 	}
-	const thrown = await submit(post(GOOD), env(), { now: NOW, fetchImpl: async () => { throw new Error('down'); } });
+	const thrown = await submit(post(GOOD), env(), { now: NOW, waitUntil, fetchImpl: async () => { throw new Error('down'); } });
 	assert.equal(thrown.status, 403);
 });
 
 test('other origins, content types and oversized bodies are refused before the challenge', async () => {
 	const { calls, fetchImpl } = siteverify(PASS);
-	assert.equal((await submit(post(GOOD, { Origin: 'https://evil.example' }), env(), { now: NOW, fetchImpl })).status, 403);
-	assert.equal((await submit(post(GOOD, { 'Content-Type': 'text/plain' }), env(), { now: NOW, fetchImpl })).status, 415);
-	assert.equal((await submit(post({ ...GOOD, intended_use: 'x'.repeat(5000) }), env(), { now: NOW, fetchImpl })).status, 413);
-	assert.equal((await submit(post('{'), env(), { now: NOW, fetchImpl })).status, 400);
+	assert.equal((await submit(post(GOOD, { Origin: 'https://evil.example' }), env(), { now: NOW, waitUntil, fetchImpl })).status, 403);
+	assert.equal((await submit(post(GOOD, { 'Content-Type': 'text/plain' }), env(), { now: NOW, waitUntil, fetchImpl })).status, 415);
+	assert.equal((await submit(post({ ...GOOD, intended_use: 'x'.repeat(5000) }), env(), { now: NOW, waitUntil, fetchImpl })).status, 413);
+	assert.equal((await submit(post('{'), env(), { now: NOW, waitUntil, fetchImpl })).status, 400);
 	assert.equal(calls.length, 0);
 });
 
 test('invalid fields are named without their values', async () => {
-	const response = await submit(post({ ...GOOD, email: 'no-es-correo', name: '' }), env(), { now: NOW, fetchImpl: siteverify(PASS).fetchImpl });
+	const response = await submit(post({ ...GOOD, email: 'no-es-correo', name: '' }), env(), { now: NOW, waitUntil, fetchImpl: siteverify(PASS).fetchImpl });
 	assert.equal(response.status, 422);
 	assert.deepEqual(await response.json(), { error: 'invalid', fields: ['name', 'email'] });
 });
@@ -92,7 +94,7 @@ test('validation trims, keeps the company optional and rejects control character
 });
 
 test('a deployment without its bindings fails closed', async () => {
-	const response = await submit(post(GOOD), { TURNSTILE_SECRET_KEY: 'secret' }, { now: NOW, fetchImpl: siteverify(PASS).fetchImpl });
+	const response = await submit(post(GOOD), { TURNSTILE_SECRET_KEY: 'secret' }, { now: NOW, waitUntil, fetchImpl: siteverify(PASS).fetchImpl });
 	assert.equal(response.status, 503);
 	assert.equal((await describeForm({}, { now: NOW })).status, 503);
 });
@@ -125,4 +127,27 @@ test('an oversized body is refused by its declared length or cut off while strea
 	assert.ok(pulled <= 6);
 	const small = new Request('https://docs.axiomic.cl/solicitudes', { method: 'POST', body: '{"a":"ñ"}' });
 	assert.equal(await readBounded(small, 4096), '{"a":"ñ"}');
+});
+
+test('a stored request emails the team after the response, and a failed email changes nothing', async () => {
+	const sent = [];
+	const fetchImpl = async (url, init) => {
+		if (url.startsWith('https://api.resend.com/')) {
+			sent.push({ headers: init.headers, body: JSON.parse(init.body) });
+			return new Response('{}', { status: sent.length === 1 ? 200 : 500 });
+		}
+		return new Response(JSON.stringify(PASS), { status: 200 });
+	};
+	const notified = { ...env(), RESEND_KEY: 're_test', NOTIFY_TO: 'equipo@axiomic.cl' };
+	const pending = [];
+	const first = await submit(post(GOOD), notified, { now: NOW, fetchImpl, waitUntil: (p) => pending.push(p) });
+	assert.equal(first.status, 201);
+	assert.equal(await pending[0], true);
+	assert.equal(sent[0].headers.Authorization, 'Bearer re_test');
+	assert.deepEqual(sent[0].body.to, ['equipo@axiomic.cl']);
+	assert.equal(sent[0].body.reply_to, 'dev@tienda.cl');
+
+	const second = await submit(post(GOOD), notified, { now: NOW, fetchImpl, waitUntil: (p) => pending.push(p) });
+	assert.equal(second.status, 201);
+	assert.equal(await pending[1], false);
 });
