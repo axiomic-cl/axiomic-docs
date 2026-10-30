@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ACTION, HOSTNAME, describeForm, passesChallenge, submit, validate } from './request.mjs';
+import { ACTION, HOSTNAME, describeForm, passesChallenge, readBounded, submit, validate } from './request.mjs';
 
 const NOW = new Date('2026-10-30T12:00:00Z');
 
@@ -108,4 +108,21 @@ test('an empty or huge token never reaches Turnstile', async () => {
 	assert.equal(await passesChallenge('', { secret: 's', fetchImpl }), false);
 	assert.equal(await passesChallenge('x'.repeat(3000), { secret: 's', fetchImpl }), false);
 	assert.equal(calls.length, 0);
+});
+
+test('an oversized body is refused by its declared length or cut off while streaming', async () => {
+	const declared = new Request('https://docs.axiomic.cl/solicitudes', { method: 'POST', headers: { 'Content-Length': '999999' }, body: '{}' });
+	assert.equal(await readBounded(declared, 4096), null);
+	let pulled = 0;
+	const endless = new ReadableStream({
+		pull(controller) {
+			pulled += 1;
+			controller.enqueue(new Uint8Array(1024));
+		},
+	});
+	const streamed = new Request('https://docs.axiomic.cl/solicitudes', { method: 'POST', body: endless, duplex: 'half' });
+	assert.equal(await readBounded(streamed, 4096), null);
+	assert.ok(pulled <= 6);
+	const small = new Request('https://docs.axiomic.cl/solicitudes', { method: 'POST', body: '{"a":"ñ"}' });
+	assert.equal(await readBounded(small, 4096), '{"a":"ñ"}');
 });

@@ -77,6 +77,36 @@ export async function describeForm(env, { now }) {
 	return json(200, { available: true, site_key: env.TURNSTILE_SITE_KEY, action: ACTION });
 }
 
+/**
+ * The body as text, or null past `max` bytes: refused up front by Content-Length, and
+ * otherwise cut off while streaming, so an oversized body is never held in memory.
+ */
+export async function readBounded(request, max) {
+	const declared = Number(request.headers.get('Content-Length'));
+	if (declared > max) return null;
+	if (!request.body) return '';
+	const reader = request.body.getReader();
+	const chunks = [];
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > max) {
+			await reader.cancel();
+			return null;
+		}
+		chunks.push(value);
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
+}
+
 /** POST: keep one access request. Never echoes what was sent, never logs it. */
 export async function submit(request, env, { now, fetchImpl }) {
 	// Preview deployments have neither binding: the form fails closed there.
@@ -85,8 +115,8 @@ export async function submit(request, env, { now, fetchImpl }) {
 	if (!(request.headers.get('Content-Type') ?? '').startsWith('application/json')) {
 		return json(415, { error: 'unsupported_media_type' });
 	}
-	const text = await request.text();
-	if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return json(413, { error: 'too_large' });
+	const text = await readBounded(request, MAX_BODY_BYTES);
+	if (text === null) return json(413, { error: 'too_large' });
 	let body;
 	try {
 		body = JSON.parse(text);
