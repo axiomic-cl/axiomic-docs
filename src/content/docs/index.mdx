@@ -1,0 +1,65 @@
+---
+title: Cobra por transferencia con una API
+description: Axiomic confirma cada transferencia bancaria en Chile, emite un recibo verificable y avisa a tu backend con un webhook firmado.
+template: splash
+hero:
+  title: Tu primer cobro de prueba en 5 minutos
+  tagline: Axiomic confirma cada transferencia bancaria en Chile, emite un recibo verificable y avisa a tu backend con un webhook firmado. Sin custodiar tu dinero.
+  image:
+    file: ../../assets/isotipo.png
+  actions:
+    - text: Empezar
+      link: /empezar/quickstart/
+      icon: right-arrow
+    - text: Referencia de la API
+      link: /api/
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard, Aside } from '@astrojs/starlight/components';
+
+## Un cobro, en una llamada
+
+```sh
+curl -s -X POST https://api.axiomic.cl/v1/payment_intents \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Idempotency-Key: pedido-1042" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_clp": 34990, "reference": "pedido-1042"}'
+```
+
+La respuesta trae el `pay_url` de la página de pago y el monto exacto que transfiere tu cliente.
+Cuando el abono llega, recibes `payment_intent.paid` firmado y un recibo que cualquiera puede
+verificar.
+
+<Aside type="note" title="Modo de prueba">
+Hoy la API corre con un banco simulado y datos sintéticos: ningún peso real se mueve.
+</Aside>
+
+## Lo que necesitas saber
+
+<CardGrid>
+	<LinkCard title="Quickstart" href="/empezar/quickstart/" description="Crea, paga y verifica un cobro de prueba, y recibe su webhook." />
+	<LinkCard title="Cómo funciona" href="/conceptos/como-funciona/" description="Del cobro al recibo, sin que Axiomic toque el dinero." />
+	<LinkCard title="Webhooks" href="/conceptos/webhooks/" description="Firma HMAC, reintentos, deduplicación y el feed de eventos." />
+	<LinkCard title="Modo de prueba" href="/conceptos/modo-de-prueba/" description="Avisos duplicados, tardíos y montos equivocados, a pedido." />
+	<LinkCard title="Agentes y mandatos" href="/conceptos/agentes/" description="Un agente de IA prepara pagos dentro de los límites de una persona." />
+	<LinkCard title="Errores" href="/errores/" description="Cada código, cuándo aparece y qué hacer." />
+</CardGrid>
+
+## Hecho para desarrolladores
+
+<CardGrid>
+	<Card title="Idempotente" icon="approve-check">
+		Repite un POST con la misma `Idempotency-Key` sin miedo a cobrar dos veces.
+	</Card>
+	<Card title="Verificable" icon="seti:lock">
+		Cada pago confirmado trae un recibo firmado con Ed25519 y webhooks con HMAC-SHA256.
+	</Card>
+	<Card title="Rastreable" icon="magnifier">
+		Cada respuesta trae `X-Request-Id`, y cada error un `code` estable y su `doc_url`.
+	</Card>
+	<Card title="Para IA" icon="puzzle">
+		Mandatos con límites para agentes, y esta documentación en [`llms.txt`](/llms.txt).
+	</Card>
+</CardGrid>

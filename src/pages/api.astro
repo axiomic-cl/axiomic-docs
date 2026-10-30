@@ -1,0 +1,118 @@
+---
+import { ScalarComponent } from '@scalar/astro';
+import wordmark from '../assets/wordmark.png';
+
+const title = 'Referencia de la API · Axiomic Docs';
+const description = 'Las rutas de la API de cobros v1 de Axiomic, con sus esquemas y ejemplos.';
+---
+
+<!doctype html>
+<html lang="es-CL">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="icon" href="/favicon.png" type="image/png" />
+		<link rel="canonical" href={new URL('/api/', Astro.site)} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<style is:global>
+			:root {
+				--ax-bar: 3.25rem;
+			}
+			body {
+				margin: 0;
+				background: #0b1120;
+			}
+			.ax-bar {
+				position: sticky;
+				top: 0;
+				z-index: 100;
+				display: flex;
+				align-items: center;
+				gap: 1.5rem;
+				height: var(--ax-bar);
+				padding: 0 1rem;
+				background: rgba(11, 17, 32, 0.92);
+				backdrop-filter: saturate(160%) blur(8px);
+				border-bottom: 1px solid #17223a;
+				font: 500 0.875rem/1 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+			}
+			.ax-bar img {
+				height: 1.25rem;
+				width: auto;
+				display: block;
+			}
+			.ax-bar nav {
+				display: flex;
+				gap: 1rem;
+				overflow-x: auto;
+			}
+			.ax-bar a {
+				color: #c7d8ff;
+				text-decoration: none;
+				white-space: nowrap;
+			}
+			.ax-bar a:hover {
+				color: #fff;
+			}
+			.ax-test {
+				margin-left: auto;
+				padding: 0.2rem 0.6rem;
+				border: 1px solid #3b7bff;
+				border-radius: 999px;
+				color: #3b7bff;
+				font-size: 0.75rem;
+				white-space: nowrap;
+			}
+			@media (max-width: 40rem) {
+				.ax-test {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header class="ax-bar">
+			<a href="/" aria-label="Axiomic Docs, inicio"><img src={wordmark.src} alt="Axiomic" /></a>
+			<nav aria-label="Docs">
+				<a href="/empezar/quickstart/">Quickstart</a>
+				<a href="/conceptos/como-funciona/">Conceptos</a>
+				<a href="/errores/">Errores</a>
+			</nav>
+			<span class="ax-test">Modo de prueba</span>
+		</header>
+		<ScalarComponent
+			renderMode="client"
+			configuration={{
+				url: '/openapi/payments-v1.json',
+				cdn: '/scalar/standalone.js',
+				localization: { locale: 'es' },
+				telemetry: false,
+				withDefaultFonts: false,
+				showDeveloperTools: 'never',
+				mcp: { disabled: true },
+				agent: { disabled: true },
+				// The API serves no CORS; requests belong on your server, not in this page.
+				hideTestRequestButton: true,
+				hideClientButton: true,
+				persistAuth: false,
+				documentDownloadType: 'json',
+				defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
+				forceDarkModeState: 'dark',
+				hideDarkModeToggle: true,
+				customCss: `
+					.dark-mode {
+						--scalar-color-accent: #3b7bff;
+						--scalar-background-1: #0b1120;
+						--scalar-background-2: #111a2e;
+						--scalar-background-3: #17223a;
+						--scalar-border-color: #1e2b47;
+					}
+					.t-doc__sidebar, .references-layout .references-navigation { top: var(--ax-bar); }
+				`,
+			}}
+		/>
+	</body>
+</html>

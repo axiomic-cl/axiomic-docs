@@ -1,0 +1,83 @@
+---
+title: Llaves, modos y límites
+description: Cómo se autentica tu backend, qué hace cada llave y cuánto puedes pedir.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Tu llave
+
+Cada petición de tu backend lleva tu llave de comercio:
+
+```http
+Authorization: Bearer axk_test_…
+```
+
+<Aside type="caution" title="La llave vive en tu servidor">
+Nunca la pongas en el navegador, en una app móvil ni en un repositorio. El navegador del pagador
+sólo usa el token de su página de pago, que no da acceso a nada más.
+</Aside>
+
+| Alcance | Para qué | Puede |
+|---|---|---|
+| `full` | Tu backend | Todo: cobros, webhooks, revisiones y modo de prueba. |
+| `agent` | Un agente de IA de tu comercio | Crear, leer y cancelar cobros. No resuelve revisiones ni cambia webhooks. |
+
+## Modos
+
+Una llave `axk_test_…` sólo ve datos de prueba. Hoy existe sólo el modo `test`: banco simulado y
+ningún peso real. Cuando lleguen las llaves `live`, tus datos de prueba seguirán separados de los
+reales y cambiar de modo será cambiar de llave.
+
+## Idempotencia
+
+`POST /v1/payment_intents` y `POST /v1/agent/payment_requests` exigen `Idempotency-Key`, de 8 a
+128 caracteres `[A-Za-z0-9_-]`. Usa algo que ya identifique la operación en tu sistema, como el id
+de tu pedido:
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/payment_intents" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Idempotency-Key: pedido-1042" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_clp": 34990, "reference": "pedido-1042"}'
+```
+
+- La misma llave con el mismo cuerpo devuelve la misma respuesta: repetir es seguro.
+- La misma llave con otro cuerpo responde 409
+  [`idempotency_key_reused`](/errores/#idempotency_key_reused).
+- **Si una petición se corta y no sabes si llegó, repítela con la misma llave.** Sin llave,
+  consulta antes de volver a crear.
+
+## `X-Request-Id`
+
+Cada respuesta trae `X-Request-Id: req_…`, distinto en cada petición. Un error lo repite en el
+cuerpo como `request_id`. Cítalo al pedir ayuda: identifica la petición sin que tengas que enviar
+llaves ni datos.
+
+## Límites
+
+Pasado un límite, la API responde 429 [`rate_limited`](/errores/#rate_limited) con `Retry-After`
+en segundos.
+
+| Qué | Cuenta por | Límite |
+|---|---|---|
+| Leer la página de pago y su estado | token del checkout | 120 por minuto |
+| Acciones en la página de pago | token del checkout | 20 por minuto |
+| Solicitudes de un agente | token del agente | 60 por minuto |
+| Eventos de prueba del webhook | comercio | 10 por minuto |
+
+Cada comercio de prueba tiene además estas cuotas, en ventanas fijas que empiezan con la primera
+acción:
+
+| Qué | Cupo |
+|---|---|
+| Cobros creados | 1.000 por día |
+| Avisos simulados (`test/transfers`, `test_transfer` y `test_authorize`) | 60 por minuto, en común |
+| Escenarios de prueba | 30 por hora |
+| Mandatos que nombran a tu comercio | 100 por día |
+
+Sólo cuenta lo que se hace: una repetición con la misma `Idempotency-Key` o una acción rechazada
+no gastan cupo.

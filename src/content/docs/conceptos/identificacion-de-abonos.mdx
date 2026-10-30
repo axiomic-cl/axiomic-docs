@@ -1,0 +1,61 @@
+---
+title: Cómo se identifica un abono
+description: Las reglas con que Axiomic decide a qué cobro corresponde cada transferencia.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Una transferencia no trae el id de tu cobro. Axiomic compara cada aviso del banco con los cobros
+abiertos de esa cuenta, en este orden, y se detiene en la primera regla que decide:
+
+| Regla | Cuándo decide |
+|---|---|
+| **1. Cuenta alias** | El abono llegó a un alias: sólo puede ser el cobro de ese alias. |
+| **2. RUT y monto exacto** | El RUT del pagador es el esperado y el monto es el final. |
+| **3. Monto único** | Un solo cobro abierto tiene ese monto final. |
+| **4. Revisión** | En cualquier otro caso, una persona de tu equipo decide. |
+
+El **monto único** funciona porque cada cobro lleva un descuento de 0 a 99 pesos que lo separa
+de los otros cobros vivos del mismo precio en la misma cuenta. El pagador transfiere el
+`final_amount_clp` exacto; tú absorbes el descuento.
+
+## Lo que nunca se confirma solo
+
+<Aside type="caution">
+Axiomic prefiere preguntarte a confirmar un pago que no es. Estos casos siempre van a revisión:
+</Aside>
+
+- un abono que podría ser de más de un cobro;
+- un monto distinto al final;
+- un abono acreditado después del vencimiento del cobro;
+- un RUT que contradice al esperado;
+- un segundo abono para un cobro ya pagado.
+
+Un aviso repetido del banco, con el mismo origen e id de transacción, no cambia nada.
+
+## La revisión
+
+Cuando un abono no calza, recibes `transfer.review_required`. `GET /v1/reviews` lista los
+pendientes y tu equipo asigna cada uno a un cobro o lo descarta:
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/reviews/tr_000412/resolve" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "assign", "payment_intent_id": "pr_000183"}'
+```
+
+El webhook trae el abono sin el RUT ni el nombre del pagador; léelos con tu llave en
+`GET /v1/incoming_transfers`.
+
+## Límites de esta versión
+
+- El monto final de un cobro cerrado queda reservado 24 horas, para que un pago tardío no caiga
+  en otro cobro del mismo monto.
+- Caben hasta 100 cobros vivos o reservados por precio y cuenta. Sobre eso, crear responde 409
+  [`unique_amount_unavailable`](/errores/#unique_amount_unavailable).
+- Un cobro vencido sólo pasa a pagado por revisión.
+
+Practica cada caso con los [escenarios de prueba](/conceptos/modo-de-prueba/#escenarios).

@@ -1,0 +1,71 @@
+---
+title: Página de pago
+description: Lo que ve el pagador, cómo vuelve a tu tienda y quién puede incrustarla.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Cada cobro trae un `pay_url`: la página de pago alojada por Axiomic. Redirige ahí al pagador o
+muéstrale el QR, y Axiomic lo guía hasta que su banco confirma.
+
+## Lo que ve el pagador
+
+| `checkout_state` | Pantalla |
+|---|---|
+| `created` | Elige su banco, con el monto exacto siempre visible. |
+| `awaiting_customer` | Autoriza: en la sesión de su banco con el pago directo, o con los datos para transferir y el botón «Ya transferí». |
+| `awaiting_confirmation` | «Esperando la confirmación del banco». Nunca «pago confirmado» en este estado. |
+| `succeeded` | «Pago recibido», con la fecha y el id del recibo. |
+| `review` | «Estamos revisando tu pago», sin pedirle que transfiera de nuevo. |
+| `failed` | Un mensaje, sin datos de la cuenta. |
+
+La página muestra una cuenta regresiva hasta el vencimiento y consulta su estado en vivo. En modo
+de prueba lleva la franja «Modo de prueba: no se mueve dinero real» y un botón para simular la
+transferencia. No carga analítica ni scripts de terceros, porque el token va en la URL.
+
+## Volver a tu tienda
+
+Al crear el cobro puedes pasar dos URLs:
+
+```json
+{
+  "amount_clp": 35000,
+  "reference": "pedido-881",
+  "return_url": "https://tu-tienda.cl/pedidos/881/gracias",
+  "cancel_url": "https://tu-tienda.cl/carrito",
+  "expires_in_seconds": 3600
+}
+```
+
+- `return_url`: «Volver a tu tienda» cuando el pago se recibió, y también mientras se confirma o
+  se revisa, porque el pagador ya pudo haber transferido.
+- `cancel_url`: «Volver sin pagar», sólo cuando nada está en curso.
+
+La página navega a la URL exacta, sin agregarle parámetros: pon ahí tu propia referencia.
+
+<Aside type="caution" title="Volver no prueba un pago">
+Que el pagador llegue a tu `return_url` no confirma nada. Marca el pedido pagado con el
+[webhook verificado](/conceptos/webhooks/) o con `GET /v1/payment_intents/{id}`.
+</Aside>
+
+## Incrustar la página
+
+Por defecto la página no se deja incrustar (`frame-ancestors 'none'`). Para mostrarla en un modal
+dentro de tu sitio, declara los orígenes que pueden hacerlo:
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/checkout_settings" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"allowed_origins": ["https://tu-tienda.cl", "http://localhost:3000"]}'
+```
+
+`frame-ancestors` pasa a ser exactamente esa lista, y los mensajes de la página a tu sitio van
+sólo a esos orígenes, nunca a `"*"`.
+
+<Aside type="tip" title="Próximamente: axiomic.js">
+Un script que abre la página en un modal en escritorio y por redirección en móvil, y le avisa a tu
+sitio cuando el pagador termina. Mientras tanto, redirige al `pay_url`.
+</Aside>

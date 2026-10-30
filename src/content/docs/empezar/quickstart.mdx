@@ -1,0 +1,242 @@
+---
+title: "Quickstart: tu primer cobro de prueba"
+description: "En cinco pasos creas un cobro, lo pagas con el banco simulado, ves llegar el abono y verificas el recibo firmado."
+---
+
+{/* Sincronizado desde axiomic-backend d3ea787ded3c. Edita la guía allá, no aquí. */}
+En cinco pasos creas un cobro, lo pagas con el banco simulado, ves llegar el abono y
+verificas el recibo firmado. Después recibes el mismo aviso como webhook firmado. Todo corre en
+**modo de prueba**: banco simulado, datos sintéticos y ningún peso real.
+
+
+Necesitas `curl`, `jq` y Python 3 con el paquete `cryptography` (`pip install cryptography`).
+Las reglas completas están en el [contrato v1](/api/).
+
+## 1. Consigue tu llave de prueba
+
+El sandbox ya está alojado: no necesitas instalar nada. Pide acceso y te
+enviamos una llave `axk_test_…` para tu comercio de prueba. Después, en tu terminal:
+
+```sh
+export AXIOMIC_API=https://api.axiomic.cl
+export AXIOMIC_KEY=axk_test_tu_llave
+```
+
+La llave `axk_test_…` es secreta: vive en tu servidor, nunca en el navegador. Comprueba que la API
+responde y que no mueve dinero real:
+
+```sh
+curl -s "$AXIOMIC_API/ready" | jq .
+```
+
+```json
+{"ready": true, "mode": "test", "real_money_enabled": false}
+```
+
+## 2. Crea un cobro
+
+Tu backend crea el cobro con la llave y una `Idempotency-Key`. Si la respuesta se pierde,
+repetir la misma llave con el mismo cuerpo devuelve el mismo cobro, nunca uno nuevo.
+
+```sh
+ORDER="pedido-$(date +%s)"
+PAYMENT=$(curl -s -X POST "$AXIOMIC_API/v1/payment_intents" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Idempotency-Key: $ORDER" \
+  -H "Content-Type: application/json" \
+  -d "{\"amount_clp\": 7200, \"reference\": \"$ORDER\", \"description\": \"Pedido de prueba\"}")
+echo "$PAYMENT" | jq '{id, status, amount_clp, final_amount_clp, pay_url}'
+PAYMENT_ID=$(echo "$PAYMENT" | jq -er .id)
+PAY_TOKEN=$(echo "$PAYMENT" | jq -er .pay_token)
+```
+
+`pay_url` es la página de pago que abres al comprador. `final_amount_clp` puede ser hasta $99
+menor que `amount_clp`: ese monto único identifica la transferencia y el descuento lo absorbe el
+comercio. El pagador nunca ve el precio base.
+
+## 3. Paga con el banco simulado
+
+En el checkout real, el comprador elige su banco y autoriza en la página. Aquí lo haces tú con
+las mismas rutas públicas, que sólo necesitan el token del cobro:
+
+```sh
+curl -s "$AXIOMIC_API/v1/banks" | jq -c '.data[] | {id, name, connectors}'
+ATTEMPT_ID=$(curl -s -X POST "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN/attempts" \
+  -H "Content-Type: application/json" \
+  -d '{"bank_id": "test_norte", "connector": "sim"}' | jq -er .id)
+curl -s -X POST "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN/attempts/$ATTEMPT_ID/test_authorize" \
+  -H "Content-Type: application/json" \
+  -d '{"outcome": "approve", "delay_seconds": 2}' | jq '{id, state}'
+```
+
+El intento queda `authorized`, pero **el cobro sigue abierto**: autorizar no es pagar. El banco
+simulado avisa el abono a los dos segundos y el worker lo entrega.
+
+## 4. Espera el abono
+
+La página de pago consulta el estado hasta que `checkout_state` es `succeeded`, lo único que
+significa «pago recibido»:
+
+```sh
+for attempt in $(seq 30); do
+  STATE=$(curl -s "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN/status" | jq -r .checkout_state)
+  echo "checkout_state: $STATE"
+  [ "$STATE" = succeeded ] && break
+  sleep 1
+done
+test "$STATE" = succeeded
+curl -s "$AXIOMIC_API/v1/payment_intents/$PAYMENT_ID" -H "Authorization: Bearer $AXIOMIC_KEY" \
+  | jq '{status, method, receipt_id, fee}'
+```
+
+El cobro pasa a `paid` cuando Axiomic identifica el abono, nunca por el aviso del comprador ni
+por la respuesta del banco. Si no llega en 30 segundos, revisa que el servicio siga corriendo.
+El mismo hecho queda en el feed de eventos, con el mismo id y cuerpo que tendrá su webhook:
+
+```sh
+curl -s "$AXIOMIC_API/v1/events?type=payment_intent.paid&limit=1" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" | jq '.data[0] | {id, type, created_at}'
+```
+
+## 5. Verifica el recibo
+
+Cada cobro pagado trae un recibo firmado con Ed25519, que el comprador y tú pueden verificar
+sin confiar en Axiomic. Guarda el recibo y las llaves públicas:
+
+```sh
+curl -s "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN" | jq .receipt > receipt.json
+curl -s "$AXIOMIC_API/v1/receipt_keys" > receipt_keys.json
+```
+
+La firma cubre el recibo sin `signature`, en JSON con llaves ordenadas, sin espacios y ASCII:
+
+```python
+# verify_receipt.py
+import json
+import sys
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+with open(sys.argv[1]) as file:
+    receipt = json.load(file)
+with open(sys.argv[2]) as file:
+    keys = {key["key_id"]: key["public_key"] for key in json.load(file)["data"]}
+
+body = {name: value for name, value in receipt.items() if name != "signature"}
+message = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(keys[receipt["key_id"]]))
+# Lanza InvalidSignature si alguien cambió un solo campo.
+public_key.verify(bytes.fromhex(receipt["signature"]), message)
+amount = f"{receipt['final_amount_clp']:,}".replace(",", ".")
+print(f"Recibo {receipt['receipt_id']} verificado: ${amount} de {receipt['payment_intent_id']}")
+```
+
+```sh
+python3 verify_receipt.py receipt.json receipt_keys.json
+```
+
+Listo: un cobro creado, pagado con el banco simulado, confirmado por su abono y con un recibo
+verificable.
+
+## 6. Recibe el webhook firmado
+
+En producción tu backend no consulta: Axiomic le avisa con un webhook firmado y reintenta hasta
+que respondes 2xx. La API alojada sólo entrega a URLs HTTPS públicas, así que expón tu receptor
+local con un túnel. Con [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/),
+en otra terminal:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:4190
+```
+
+Copia la URL `https://….trycloudflare.com` que imprime:
+
+```sh
+export AXIOMIC_WEBHOOK_URL=https://tu-tunel.trycloudflare.com
+```
+
+Registra tu receptor. La respuesta trae el secreto con que se firma cada entrega:
+
+```sh
+export AXIOMIC_WEBHOOK_SECRET=$(curl -s -X POST "$AXIOMIC_API/v1/webhook_endpoints" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "'"$AXIOMIC_WEBHOOK_URL"'/webhooks/axiomic"}' | jq -er .secret)
+```
+
+El receptor verifica la firma sobre el **cuerpo crudo** antes de leerlo y descarta repetidos por
+`X-Axiomic-Event-Id`, porque la entrega es «al menos una vez»:
+
+```python
+# receiver.py
+import hashlib
+import hmac
+import json
+import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+SECRET = os.environ["AXIOMIC_WEBHOOK_SECRET"].encode()
+seen: set[str] = set()
+
+
+class Webhook(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        expected = "sha256=" + hmac.new(SECRET, body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, self.headers.get("X-Axiomic-Signature", "")):
+            self.send_response(401)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.end_headers()
+        event_id = self.headers["X-Axiomic-Event-Id"]
+        if event_id in seen:
+            return
+        seen.add(event_id)
+        event = json.loads(body)
+        print(f"Webhook verificado: {event['type']} {event_id}", flush=True)
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+HTTPServer(("127.0.0.1", 4190), Webhook).serve_forever()
+```
+
+Déjalo corriendo y crea otro cobro. Esta vez `test_transfer` simula en un paso que el comprador
+transfirió el monto exacto:
+
+```sh
+python3 receiver.py &
+ORDER="pedido-$(date +%s)-webhook"
+PAY_TOKEN=$(curl -s -X POST "$AXIOMIC_API/v1/payment_intents" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Idempotency-Key: $ORDER" \
+  -H "Content-Type: application/json" \
+  -d "{\"amount_clp\": 15000, \"reference\": \"$ORDER\"}" | jq -er .pay_token)
+curl -s -X POST "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN/test_transfer" | jq .
+```
+
+En un par de segundos el receptor imprime:
+
+```text
+Webhook verificado: payment_intent.paid evt_…
+```
+
+Tu pedido se marca pagado aquí, con el webhook verificado, y nunca por el regreso del navegador
+a tu tienda. Detén el receptor con `kill %1`.
+
+Para probar el receptor sin crear un cobro, `POST /v1/webhook_endpoints/test` le manda un
+`webhook_endpoint.test` firmado; tu receptor lo verifica igual y no marca ningún pedido ([Webhooks](/conceptos/webhooks/)).
+
+## Siguientes pasos
+
+- [Contrato v1](/api/): estados, revisión de abonos, comisiones y errores.
+- [OpenAPI 3.1](/openapi/payments-v1.json): para generar un cliente o explorar la referencia.
+- Casos de borde: `POST /v1/test/scenarios/fault_tour` crea en tu cuenta avisos duplicados,
+  atrasados, de otro RUT, de otro monto y desconocidos; `POST /v1/test/transfers` simula uno a
+  la medida ([Modo de prueba](/conceptos/modo-de-prueba/)).
+- Pago directo desde el banco del pagador, contra el banco simulado ([Pago directo](/conceptos/pago-directo/)).
+- Agentes que preparan pagos dentro de un mandato con aprobación humana ([Agentes y mandatos](/conceptos/agentes/)).
+- [Widget de pago](/conceptos/pagina-de-pago/): el checkout en un modal en escritorio y por redirección en
+  móvil, con los mensajes que recibe tu tienda.

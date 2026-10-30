@@ -1,0 +1,107 @@
+---
+title: Webhooks
+description: Recibe cada pago firmado en tu backend, verifica la firma y deduplica.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Axiomic avisa a tu backend con un `POST` firmado cada vez que algo cambia. **Marca un pedido
+pagado sólo con un webhook verificado** o consultando `GET /v1/payment_intents/{id}`; nunca
+porque el navegador del pagador volvió a tu tienda.
+
+## Registra tu endpoint
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/webhook_endpoints" \
+  -H "Authorization: Bearer $AXIOMIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://tu-tienda.cl/webhooks/axiomic"}'
+```
+
+La respuesta trae el `secret` con que se firma cada entrega. Guárdalo como cualquier otra
+credencial. Registrar de nuevo reemplaza el endpoint del modo.
+
+El destino debe ser `https` con un nombre o una IP pública. Axiomic rechaza loopback, redes
+privadas, link-local, CGNAT y multicast, y repite el chequeo en cada entrega. Para recibir en tu
+equipo usa un túnel, como en el [Quickstart](/empezar/quickstart/#6-recibe-el-webhook-firmado).
+
+## Eventos
+
+| Evento | Cuándo | `data` |
+|---|---|---|
+| `payment_intent.paid` | El abono calzó y el cobro quedó pagado. | `payment_intent`, `transfer` y `receipt` |
+| `payment_intent.expired` | El cobro venció sin pago. | `payment_intent` |
+| `transfer.review_required` | Un abono no calzó solo y espera a tu equipo. | `transfer` |
+| `webhook_endpoint.test` | Lo pediste tú, para probar tu receptor. | `webhook_endpoint.url` |
+
+En los webhooks, `transfer` va sin el RUT ni el nombre del pagador. Léelos con tu llave en
+`GET /v1/incoming_transfers`.
+
+## Verifica la firma
+
+Cada entrega trae dos cabeceras:
+
+- `X-Axiomic-Signature: sha256=<HMAC-SHA256 hex del cuerpo crudo con tu secreto>`
+- `X-Axiomic-Event-Id: evt_…`
+
+Verifica sobre el **cuerpo crudo**, antes de parsearlo, y compara en tiempo constante:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+import hashlib
+import hmac
+
+
+def valid(body: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
+
+</TabItem>
+<TabItem label="Node">
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+export function valid(body, header, secret) {
+  const expected = Buffer.from(`sha256=${createHmac('sha256', secret).update(body).digest('hex')}`);
+  const received = Buffer.from(header ?? '');
+  return expected.length === received.length && timingSafeEqual(expected, received);
+}
+```
+
+`body` es el `Buffer` crudo: en Express, `express.raw({ type: 'application/json' })`.
+
+</TabItem>
+</Tabs>
+
+## Al menos una vez
+
+<Aside type="caution" title="Deduplica por X-Axiomic-Event-Id">
+La entrega es «al menos una vez»: el mismo evento puede llegar más de una vez. Guarda los ids
+procesados y responde 2xx a los repetidos sin volver a actuar.
+</Aside>
+
+Si tu endpoint no responde 2xx, Axiomic reintenta a los 5 s, 30 s, 2 min, 10 min, 30 min, 1 h y
+3 h. Después se rinde; `POST /v1/webhook_events/{id}/redeliver` lo vuelve a intentar y
+`GET /v1/webhook_events` muestra cada entrega.
+
+## El feed de eventos
+
+`GET /v1/events` lista todos tus eventos, del más nuevo al más antiguo, **tengas o no un
+endpoint**. Cada evento tiene el mismo cuerpo e id que su webhook, así que puedes sincronizarte
+leyendo el feed y deduplicar por id. Acepta `type`, `limit` (1 a 100) y `starting_after`.
+
+## Prueba tu receptor
+
+`POST /v1/webhook_endpoints/test`, sin cuerpo, manda un `webhook_endpoint.test` firmado a tu
+endpoint. Sirve para probar la verificación y la deduplicación sin crear un cobro.
+
+- No habla de ningún cobro: tu receptor nunca debe marcar un pedido por él.
+- No entra al feed y tiene un solo intento automático.
+- Sin endpoint registrado responde 409 [`invalid_state`](/errores/#invalid_state). El límite es de
+  10 por minuto.
