@@ -1,6 +1,7 @@
 ---
 title: "Quickstart: tu primer cobro de prueba"
 description: "En cinco pasos creas un cobro, lo pagas con el banco simulado, ves llegar el abono y verificas el recibo firmado."
+editUrl: false
 ---
 
 {/* Sincronizado desde axiomic-backend d3ea787ded3c. Edita la guía allá, no aquí. */}
@@ -10,11 +11,11 @@ verificas el recibo firmado. Después recibes el mismo aviso como webhook firmad
 
 
 Necesitas `curl`, `jq` y Python 3 con el paquete `cryptography` (`pip install cryptography`).
-Las reglas completas están en el [contrato v1](/api/).
+Las rutas y los esquemas están en la [referencia de la API](/api/).
 
 ## 1. Consigue tu llave de prueba
 
-El sandbox ya está alojado: no necesitas instalar nada. Pide acceso y te
+El sandbox ya está alojado: no necesitas instalar nada. [Pide acceso](/empezar/pedir-acceso/) y te
 enviamos una llave `axk_test_…` para tu comercio de prueba. Después, en tu terminal:
 
 ```sh
@@ -90,7 +91,7 @@ curl -s "$AXIOMIC_API/v1/payment_intents/$PAYMENT_ID" -H "Authorization: Bearer 
 ```
 
 El cobro pasa a `paid` cuando Axiomic identifica el abono, nunca por el aviso del comprador ni
-por la respuesta del banco. Si no llega en 30 segundos, revisa que el servicio siga corriendo.
+por la respuesta del banco. Si no llega en 30 segundos, vuelve a consultar.
 El mismo hecho queda en el feed de eventos, con el mismo id y cuerpo que tendrá su webhook:
 
 ```sh
@@ -231,12 +232,11 @@ Para probar el receptor sin crear un cobro, `POST /v1/webhook_endpoints/test` le
 
 ## Siguientes pasos
 
-- [Contrato v1](/api/): estados, revisión de abonos, comisiones y errores.
+- [Referencia de la API](/api/): rutas, esquemas, estados y errores.
 - [OpenAPI 3.1](/openapi/payments-v1.json): para generar un cliente o explorar la referencia.
 - Casos de borde: `POST /v1/test/scenarios/fault_tour` crea en tu cuenta avisos duplicados,
   atrasados, de otro RUT, de otro monto y desconocidos; `POST /v1/test/transfers` simula uno a
   la medida ([Modo de prueba](/conceptos/modo-de-prueba/)).
 - Pago directo desde el banco del pagador, contra el banco simulado ([Pago directo](/conceptos/pago-directo/)).
 - Agentes que preparan pagos dentro de un mandato con aprobación humana ([Agentes y mandatos](/conceptos/agentes/)).
-- [Widget de pago](/conceptos/pagina-de-pago/): el checkout en un modal en escritorio y por redirección en
-  móvil, con los mensajes que recibe tu tienda.
+- [Página de pago](/conceptos/pagina-de-pago/): cómo vuelve el pagador a tu tienda y quién puede incrustarla.

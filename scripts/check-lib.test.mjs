@@ -18,6 +18,7 @@ test('links resolve to the files Astro writes', () => {
 		hash: 'límites',
 	});
 	assert.deepEqual(resolveLink('#_top', '/404.html'), { file: '/404.html', hash: '_top' });
+	assert.deepEqual(resolveLink('/errores#no_such_code', '/'), { file: '/errores/index.html', hash: 'no_such_code' });
 });
 
 test('the API error codes come from the OpenAPI ApiError schema', () => {

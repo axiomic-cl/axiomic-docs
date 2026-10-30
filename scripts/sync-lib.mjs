@@ -26,7 +26,6 @@ export const CONTRACT_SECTIONS = {
 
 export const PUBLIC_SERVERS = [
 	{ url: 'https://api.axiomic.cl', description: 'Producción, en modo de prueba (banco simulado, sin dinero real)' },
-	{ url: 'https://api.dev.axiomic.cl', description: 'Desarrollo' },
 ];
 
 const HOSTED_STEP_ONE = `## 1. Consigue tu llave de prueba
@@ -62,15 +61,15 @@ export function takeTitle(markdown) {
 export function describe(body) {
 	const paragraph = body.split(/\n{2,}/).find((block) => block.trim() && !/^[#>`<|-]/.test(block.trim()));
 	if (!paragraph) return '';
-	const text = paragraph.replace(/\s+/g, ' ').replace(/[*_`]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
+	const text = paragraph.replace(/\s+/g, ' ').replace(/[*`]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
 	const sentence = text.match(/^.+?[.!?](\s|$)/);
 	return (sentence ? sentence[0] : text).trim();
 }
 
 /** Rewrite links: public guides go to their routes; backend-internal files keep only their text. */
 export function rewriteLinks(body) {
-	return body.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (whole, text, target) => {
-		if (/^(https?:|mailto:|#)/.test(target)) return whole;
+	return body.replace(/(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (whole, text, target) => {
+		if (/^(https?:|mailto:|#|\/)/.test(target)) return whole;
 		const [path, hash = ''] = target.split('#');
 		const file = path.split('/').pop();
 		if (file && Object.hasOwn(ROUTES, file)) {
@@ -95,7 +94,76 @@ export function linkContractSections(body) {
 
 /** The backend's own CI note at the end of the catalog's introduction. */
 export function dropErrorCatalogNote(body) {
-	return body.replace(/\nUna prueba \(`tests\/[\s\S]*?\.\n(?=\n)/, '');
+	return replaceOnce(body, /\nUna prueba \(`tests\/[\s\S]*?\.\n(?=\n)/, '', 'the error catalog CI note');
+}
+
+/** Replace exactly one match, or fail the sync: a guide that changed must be looked at. */
+function replaceOnce(body, pattern, replacement, what) {
+	if (!pattern.test(body)) throw new Error(`the backend guide changed: ${what} not found`);
+	return body.replace(pattern, replacement);
+}
+
+/** A literal phrase as a pattern that tolerates a different line wrap. */
+function phrase(text) {
+	return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'));
+}
+
+/**
+ * Sentences of the backend guides written for the private repository or the pay page's own
+ * backend, with their public wording. Each must still be there, so a reworded guide is
+ * reviewed instead of published as is; delete an entry once the backend says it publicly.
+ */
+export const PAGE_TEXT = {
+	'quickstart.md': [
+		[
+			'Las reglas completas están en el [contrato v1](../payments-api-spec-v1.md).',
+			'Las rutas y los esquemas están en la [referencia de la API](../payments-api-spec-v1.md).',
+		],
+		[
+			'Si no llega en 30 segundos, revisa que el servicio siga corriendo.',
+			'Si no llega en 30 segundos, vuelve a consultar.',
+		],
+		[
+			'[Contrato v1](../payments-api-spec-v1.md): estados, revisión de abonos, comisiones y errores.',
+			'[Referencia de la API](../payments-api-spec-v1.md): rutas, esquemas, estados y errores.',
+		],
+		[
+			'[Widget de pago](widget.md): el checkout en un modal en escritorio y por redirección en móvil, con los mensajes que recibe tu tienda.',
+			'[Página de pago](widget.md): cómo vuelve el pagador a tu tienda y quién puede incrustarla.',
+		],
+	],
+	'errores.md': [
+		[' En las rutas internas del alta del sandbox, falta la credencial de servicio del BFF (`axs_test_…`) o no coincide.', ''],
+		['tu BFF lo guarda en una cookie `HttpOnly`.', 'la página de pago lo guarda en una cookie `HttpOnly`.'],
+		[' En el alta interna del sandbox, el dueño ya tiene 3 comercios de prueba, o el comercio ya tiene 2 llaves vigentes con ese alcance.', ''],
+		[' Para emitir otra llave, revoca antes una de las vigentes.', ''],
+	],
+};
+
+export function publicWording(name, body) {
+	return (PAGE_TEXT[name] ?? []).reduce(
+		(page, [internal, wording]) => replaceOnce(page, phrase(internal), wording, `"${internal.slice(0, 40)}…"`),
+		body,
+	);
+}
+
+/** What a public page must never carry: backend paths, local setup and internal services. */
+const INTERNAL = [
+	[/\bBFF\b/, 'the pay page BFF'],
+	[/axs_test_/, 'the sandbox service credential'],
+	[/alta (interna )?del sandbox|alta interna/, 'the internal sandbox sign-up'],
+	[/tests\//, 'a backend test path'],
+	[/docker|uv run|\.axiomic\//, 'local setup'],
+	[/127\.0\.0\.1:4177/, 'the local API'],
+	[/\]\((?!https?:|mailto:|#|\/)[^)]*\)/, 'a link or image into the backend repository'],
+];
+
+export function assertPublic(name, page) {
+	for (const [pattern, what] of INTERNAL) {
+		const found = page.match(pattern);
+		if (found) throw new Error(`${name} still cites ${what} ("${found[0]}"); give it public wording`);
+	}
+	return page;
 }
 
 /** Drop the backend's CI markers; they mean nothing on the site. */
@@ -119,10 +187,6 @@ export AXIOMIC_WEBHOOK_URL=https://tu-tunel.trycloudflare.com
 \`\`\`
 `;
 
-function replaceOnce(body, pattern, replacement, what) {
-	if (!pattern.test(body)) throw new Error(`the quickstart changed: ${what} not found`);
-	return body.replace(pattern, replacement);
-}
 
 /** The local sandbox steps assume the private repository; the site uses the hosted API. */
 export function hostQuickstart(body) {
@@ -146,8 +210,13 @@ export function hostQuickstart(body) {
 
 /** The intro paragraph about the backend CI does not belong on the public page. */
 export function dropBackendCiNote(body) {
-	return body.replace(/\nUna prueba de CI[\s\S]*?antes\nde que la guía mienta\.\n/, '\n');
+	return replaceOnce(body, /\nUna prueba de CI[\s\S]*?antes\s+de que la guía mienta\.\n/, '\n', 'the quickstart CI note');
 }
+
+/** Descriptions for guides whose first sentence does not stand alone. */
+const DESCRIPTIONS = {
+	'errores.md': 'Cada error de la API: su código estable, su HTTP, cuándo aparece y qué hacer.',
+};
 
 export function frontmatter({ title, description, sourceCommit }) {
 	const quote = (value) => JSON.stringify(value);
@@ -155,6 +224,8 @@ export function frontmatter({ title, description, sourceCommit }) {
 		'---',
 		`title: ${quote(title)}`,
 		`description: ${quote(description)}`,
+		// Synced pages are edited in the backend; an edit here would be overwritten.
+		'editUrl: false',
 		'---',
 		'',
 		`{/* Sincronizado desde axiomic-backend ${sourceCommit}. Edita la guía allá, no aquí. */}`,
@@ -165,11 +236,11 @@ export function frontmatter({ title, description, sourceCommit }) {
 /** Whole page for one backend guide. */
 export function toPage(name, markdown, sourceCommit) {
 	const { title, body } = takeTitle(markdown);
-	let page = dropCiComments(body);
+	let page = publicWording(name, dropCiComments(body));
 	if (name === 'quickstart.md') page = hostQuickstart(dropBackendCiNote(page));
 	if (name === 'errores.md') page = dropErrorCatalogNote(page);
-	page = linkContractSections(rewriteLinks(page));
-	return frontmatter({ title, description: describe(page), sourceCommit }) + page;
+	page = assertPublic(name, linkContractSections(rewriteLinks(page)));
+	return frontmatter({ title, description: DESCRIPTIONS[name] ?? describe(page), sourceCommit }) + page;
 }
 
 /**

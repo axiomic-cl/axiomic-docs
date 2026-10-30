@@ -62,14 +62,14 @@ curl -X POST "$AXIOMIC_API/v1/agent/payment_requests" \
 Aprobar no paga: el cobro sigue abierto hasta que llega el abono. Un checkout tiene a lo más una
 solicitud viva por mandato, así que un cobro se compromete una sola vez.
 
-## MCP
+## Llaves de comercio con alcance `agent`
 
-Axiomic expone estas mismas reglas como herramientas MCP. Del lado del comercio, un agente con la
-llave `agent` crea, lee y cancela cobros; del lado del pagador, un agente con su `agt_test_…`
-prepara pagos y consulta su estado. Ninguna herramienta aprueba, autoriza en un banco, mueve
-dinero ni recibe claves bancarias.
+Del lado del comercio, un agente de IA usa una llave con alcance `agent`: crea, lee y cancela
+cobros, pero no resuelve revisiones ni cambia webhooks. Del lado del pagador, el agente usa su
+`agt_test_…` para preparar pagos y consultar su estado. Ninguno aprueba, autoriza en un banco,
+mueve dinero ni recibe claves bancarias.
 
-<Aside type="tip" title="Próximamente: MCP alojado">
-Hoy el servidor MCP corre por stdio. El MCP remoto, con OAuth, viene después; mientras tanto, tu
-agente puede llamar a estas rutas directamente.
+<Aside type="tip" title="Próximamente: servidor MCP">
+Un servidor MCP alojado, con estas mismas herramientas y OAuth, viene después. Mientras tanto, tu
+agente llama a estas rutas directamente.
 </Aside>

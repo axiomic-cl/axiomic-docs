@@ -9,7 +9,13 @@ import { publicOpenApi, toPage } from './sync-lib.mjs';
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backend = resolve(process.argv[2] ?? join(site, '..', 'axiomic-backend'));
-const sourceCommit = execFileSync('git', ['-C', backend, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
+const git = (...args) => execFileSync('git', ['-C', backend, ...args], { encoding: 'utf8' }).trim();
+const sourceCommit = git('rev-parse', '--short=12', 'HEAD');
+// The recorded commit must be what was copied: no local edits to the synced sources.
+if (git('status', '--porcelain', '--', 'docs/desarrolladores', 'docs/openapi')) {
+	console.error(`${backend} has uncommitted changes in docs/desarrolladores or docs/openapi; commit or stash them first.`);
+	process.exit(1);
+}
 
 const pages = {
 	'quickstart.md': 'src/content/docs/empezar/quickstart.mdx',

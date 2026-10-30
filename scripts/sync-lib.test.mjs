@@ -8,6 +8,8 @@ import {
 	linkContractSections,
 	publicOpenApi,
 	rewriteLinks,
+	assertPublic,
+	publicWording,
 	takeTitle,
 	toPage,
 } from './sync-lib.mjs';
@@ -19,6 +21,7 @@ test('the level-one title becomes the page title', () => {
 
 test('the description is the first plain sentence', () => {
 	assert.equal(describe('## Tabla\n\nCreas un **cobro** y lo pagas. Después más.\n'), 'Creas un cobro y lo pagas.');
+	assert.equal(describe('Responde `real_money_enabled` en falso.\n'), 'Responde real_money_enabled en falso.');
 });
 
 test('public guides link to their routes and internal files keep only their text', () => {
@@ -27,6 +30,9 @@ test('public guides link to their routes and internal files keep only their text
 	assert.equal(rewriteLinks('[errores](errores.md#invalid_api_key)'), '[errores](/errores/#invalid_api_key)');
 	assert.equal(rewriteLinks('[plan](../plan-experiencia-desarrollador.md)'), 'plan');
 	assert.equal(rewriteLinks('[web](https://axiomic.cl) y [ancla](#paso)'), '[web](https://axiomic.cl) y [ancla](#paso)');
+	assert.equal(rewriteLinks('[Pide acceso](/empezar/pedir-acceso/)'), '[Pide acceso](/empezar/pedir-acceso/)');
+	assert.equal(rewriteLinks('![diagrama](img/flujo.png)'), '![diagrama](img/flujo.png)');
+	assert.equal(rewriteLinks('[plan](../plan.md "Plan interno")'), 'plan');
 });
 
 const LOCAL_QUICKSTART = [
@@ -58,14 +64,14 @@ test('a backend quickstart that drifted fails the sync instead of shipping stale
 });
 
 test('a synced page carries frontmatter and its source commit', () => {
-	const page = toPage('errores.md', '# Errores de la API\n\nCada error trae un código.\n\n### `invalid_api_key`\n', 'abc123');
-	assert.match(page, /^---\ntitle: "Errores de la API"\ndescription: "Cada error trae un código\."\n---/);
+	const page = toPage('guia.md', '# Una guía\n\nCada error trae un código.\n\n### `invalid_api_key`\n', 'abc123');
+	assert.match(page, /^---\ntitle: "Una guía"\ndescription: "Cada error trae un código\."\neditUrl: false\n---/);
 	assert.match(page, /Sincronizado desde axiomic-backend abc123/);
 });
 
 test('the OpenAPI document points at the public servers only', () => {
 	const document = publicOpenApi({ openapi: '3.1.0', paths: {}, servers: [{ url: 'http://127.0.0.1:4177' }] });
-	assert.deepEqual(document.servers.map((server) => server.url), ['https://api.axiomic.cl', 'https://api.dev.axiomic.cl']);
+	assert.deepEqual(document.servers.map((server) => server.url), ['https://api.axiomic.cl']);
 	assert.throws(() => publicOpenApi({}));
 });
 
@@ -113,4 +119,26 @@ test('the OpenAPI text cites public pages, never backend files', () => {
 	assert.equal(document.info.description, 'Modo de prueba. Guías y conceptos en [docs.axiomic.cl](https://docs.axiomic.cl/).');
 	assert.match(document.paths['/ready'].get.description, /catálogo de errores\]\(https:\/\/docs\.axiomic\.cl\/errores\/\)/);
 	assert.throws(() => publicOpenApi({ openapi: '3.1.0', paths: {}, info: { description: 'Ver docs/plan.md' } }), /docs\/plan\.md/);
+});
+
+test('internal sentences get their public wording, across a different line wrap', () => {
+	const errores = [
+		'rechaza. En las rutas internas del alta del sandbox, falta',
+		'la credencial de servicio del BFF (`axs_test_…`) o no coincide.',
+		'tu BFF lo guarda en una cookie `HttpOnly`. vencen. En el alta interna del sandbox, el dueño ya tiene 3',
+		'comercios de prueba, o el comercio ya tiene 2 llaves vigentes con ese alcance.',
+		'Para un cobro sin intentos, crea otro. Para emitir otra llave, revoca antes una de las vigentes.',
+	].join('\n');
+	const page = publicWording('errores.md', errores);
+	assert.doesNotMatch(page, /BFF|sandbox|axs_test_|llave/);
+	assert.match(page, /la página de pago lo guarda/);
+	assert.throws(() => publicWording('errores.md', 'otro texto'), /backend guide changed/);
+	assert.equal(publicWording('guia.md', 'sin cambios'), 'sin cambios');
+});
+
+test('a page that still cites internals fails the sync', () => {
+	for (const text of ['tu BFF', 'uv run python', 'ver tests/x.py', 'http://127.0.0.1:4177', '[plan](plan.md "t")', '![flujo](img/flujo.png)', 'docker compose']) {
+		assert.throws(() => assertPublic('guia.md', text), /give it public wording/, text);
+	}
+	assert.equal(assertPublic('guia.md', '[ok](/api/) [web](https://axiomic.cl) 127.0.0.1:4190'), '[ok](/api/) [web](https://axiomic.cl) 127.0.0.1:4190');
 });

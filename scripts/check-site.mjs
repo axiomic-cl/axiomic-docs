@@ -1,6 +1,6 @@
 // Fail the build on a broken internal link or anchor, or on an API error code whose doc_url
 // (https://docs.axiomic.cl/errores#<code>) would land on nothing.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { apiErrorCodes, collectIds, collectLinks, resolveLink } from './check-lib.mjs';
@@ -28,7 +28,7 @@ for (const [route, html] of pages) {
 	const from = route.replace(/index\.html$/, '');
 	for (const href of collectLinks(html)) {
 		const { file, hash } = resolveLink(href, from);
-		if (!pages.has(file) && !existsSync(join(dist, file))) {
+		if (!pages.has(file) && !(existsSync(join(dist, file)) && statSync(join(dist, file)).isFile())) {
 			problems.push(`${route}: ${href} does not exist`);
 		} else if (hash && pages.has(file) && !ids.get(file).has(hash)) {
 			problems.push(`${route}: ${href} has no #${hash}`);

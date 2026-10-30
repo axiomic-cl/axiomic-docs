@@ -1,6 +1,7 @@
 ---
 title: "Errores de la API de cobros"
-description: "Toda negativa responde con un código HTTP y un cuerpo como éste:"
+description: "Cada error de la API: su código estable, su HTTP, cuándo aparece y qué hacer."
+editUrl: false
 ---
 
 {/* Sincronizado desde axiomic-backend d3ea787ded3c. Edita la guía allá, no aquí. */}
@@ -78,8 +79,7 @@ o fue revocada.
 
 **401.** En las rutas de agentes falta el token, no tiene el formato, no existe, o es del otro
 rol: el token del agente (`agt_test_…`) sólo pide y lee solicitudes; el de la persona
-(`hld_test_…`) lee, revoca, aprueba y rechaza. En las rutas internas del alta del sandbox, falta
-la credencial de servicio del BFF (`axs_test_…`) o no coincide.
+(`hld_test_…`) lee, revoca, aprueba y rechaza.
 
 **Qué hacer:** usa el token que corresponde a la ruta. Los dos llegan una sola vez, al crear el
 mandato.
@@ -89,8 +89,7 @@ mandato.
 **401.** Una ruta del pago directo (`…/attempts/{attempt_id}/bank…`) llegó sin
 `X-Axiomic-Bank-Session` o con el de otro intento.
 
-**Qué hacer:** reenvía el `bank_session_token` que devolvió la creación del intento; tu BFF lo
-guarda en una cookie `HttpOnly`. Si se perdió, ese intento ya no se maneja desde otro navegador:
+**Qué hacer:** reenvía el `bank_session_token` que devolvió la creación del intento; la página de pago lo guarda en una cookie `HttpOnly`. Si se perdió, ese intento ya no se maneja desde otro navegador:
 su estado sigue en `…/status`.
 
 ## 403
@@ -227,11 +226,9 @@ simulado, una clave dinámica bien formada pero equivocada no da este error: el 
 ### `limit_reached`
 
 **429.** La cuenta llegó a 5.000 cobros abiertos, o el cobro llegó a 10 intentos del comprador.
-En el alta interna del sandbox, el dueño ya tiene 3 comercios de prueba, o el comercio ya tiene 2
-llaves vigentes con ese alcance.
 
 **Qué hacer:** cancela los cobros que ya no sirven o espera que venzan. Para un cobro sin
-intentos libres, crea otro cobro. Para emitir otra llave, revoca antes una de las vigentes.
+intentos libres, crea otro cobro.
 
 ### `rate_limited`
 

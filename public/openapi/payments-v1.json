@@ -8881,10 +8881,6 @@
     {
       "url": "https://api.axiomic.cl",
       "description": "Producción, en modo de prueba (banco simulado, sin dinero real)"
-    },
-    {
-      "url": "https://api.dev.axiomic.cl",
-      "description": "Desarrollo"
     }
   ],
   "tags": [

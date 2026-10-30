@@ -27,7 +27,9 @@ export function resolveLink(href, from) {
 	const hash = decodeURIComponent(rawHash);
 	const target = rawPath.split('?')[0];
 	const path = target ? posix.resolve(posix.dirname(`${from}x`), target) : from;
-	const directory = target ? target.endsWith('/') : from.endsWith('/');
+	// "/errores" serves /errores/index.html, so an extensionless path is a directory too:
+	// that is the shape of the API's doc_url (/errores#<code>).
+	const directory = target ? target.endsWith('/') || !posix.extname(target) : from.endsWith('/');
 	return { file: directory ? `${path.replace(/\/$/, '')}/index.html` : path, hash };
 }
 

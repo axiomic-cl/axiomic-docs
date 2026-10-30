@@ -51,7 +51,7 @@ Hoy la API corre con un banco simulado y datos sintéticos: ningún peso real se
 
 <CardGrid>
 	<Card title="Idempotente" icon="approve-check">
-		Repite un POST con la misma `Idempotency-Key` sin miedo a cobrar dos veces.
+		Crea cobros con una `Idempotency-Key` y repite la llamada sin miedo a cobrar dos veces.
 	</Card>
 	<Card title="Verificable" icon="seti:lock">
 		Cada pago confirmado trae un recibo firmado con Ed25519 y webhooks con HMAC-SHA256.
