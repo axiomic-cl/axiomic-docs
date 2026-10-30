@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+public/scalar/
+.wrangler/
+.env*
+!.env.example
+.DS_Store
