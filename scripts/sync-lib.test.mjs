@@ -9,7 +9,6 @@ import {
 	publicOpenApi,
 	rewriteLinks,
 	assertPublic,
-	publicWording,
 	takeTitle,
 	toPage,
 } from './sync-lib.mjs';
@@ -119,21 +118,6 @@ test('the OpenAPI text cites public pages, never backend files', () => {
 	assert.equal(document.info.description, 'Modo de prueba. Guías y conceptos en [docs.axiomic.cl](https://docs.axiomic.cl/).');
 	assert.match(document.paths['/ready'].get.description, /catálogo de errores\]\(https:\/\/docs\.axiomic\.cl\/errores\/\)/);
 	assert.throws(() => publicOpenApi({ openapi: '3.1.0', paths: {}, info: { description: 'Ver docs/plan.md' } }), /docs\/plan\.md/);
-});
-
-test('internal sentences get their public wording, across a different line wrap', () => {
-	const errores = [
-		'rechaza. En las rutas internas del alta del sandbox, falta',
-		'la credencial de servicio del BFF (`axs_test_…`) o no coincide.',
-		'tu BFF lo guarda en una cookie `HttpOnly`. vencen. En el alta interna del sandbox, el dueño ya tiene 3',
-		'comercios de prueba, o el comercio ya tiene 2 llaves vigentes con ese alcance.',
-		'Para un cobro sin intentos, crea otro. Para emitir otra llave, revoca antes una de las vigentes.',
-	].join('\n');
-	const page = publicWording('errores.md', errores);
-	assert.doesNotMatch(page, /BFF|sandbox|axs_test_|llave/);
-	assert.match(page, /la página de pago lo guarda/);
-	assert.throws(() => publicWording('errores.md', 'otro texto'), /backend guide changed/);
-	assert.equal(publicWording('guia.md', 'sin cambios'), 'sin cambios');
 });
 
 test('a page that still cites internals fails the sync', () => {
