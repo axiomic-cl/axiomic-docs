@@ -1,0 +1,21 @@
+---
+title: Novedades
+description: Los cambios de la API de cobros y de esta documentación.
+---
+
+Los cambios de la API v1 son aditivos: ningún campo, ruta ni estado existente cambia de forma.
+
+## 30 de octubre de 2026
+
+- **Documentación.** Nace `docs.axiomic.cl`: Quickstart contra la API alojada, conceptos,
+  referencia de la API y catálogo de errores. Todo el contenido está también en
+  [`llms.txt`](/llms.txt).
+- **API.** `POST /v1/webhook_endpoints/test` manda un evento de prueba firmado a tu receptor.
+- **API.** Cuotas por comercio de prueba: pasado el cupo, 429 `rate_limited` con `Retry-After`.
+- **API.** `return_url` y `cancel_url` en los cobros, y `GET`/`POST /v1/checkout_settings` para
+  declarar quién puede incrustar la página de pago.
+
+## 29 de octubre de 2026
+
+- **API.** Toda respuesta trae `X-Request-Id`; los errores traen `request_id` y `doc_url`.
+- **API.** `POST /v1/test/scenarios/{name}` juega seis escenarios de fallas y `fault_tour`.

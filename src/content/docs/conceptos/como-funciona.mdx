@@ -1,0 +1,58 @@
+---
+title: Cómo funciona Axiomic
+description: Del cobro al recibo firmado, sin que Axiomic toque el dinero.
+sidebar:
+  order: 1
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+Axiomic cobra por transferencia bancaria. Tu backend crea un **cobro**, el pagador transfiere
+desde su banco y Axiomic confirma el pago cuando el **abono** llega a tu cuenta. Entonces emite
+un **recibo** firmado y te avisa con un **webhook**.
+
+<Steps>
+
+1. **Creas el cobro.** `POST /v1/payment_intents` con el monto en CLP y tu referencia. La
+   respuesta trae el `pay_url` de la [página de pago](/conceptos/pagina-de-pago/) y el monto
+   final: el precio menos un descuento único de 0 a 99 pesos, que absorbes tú y que distingue
+   este cobro de otros del mismo precio.
+
+2. **El pagador paga desde su banco.** En la página de pago elige su banco y transfiere el monto
+   exacto, o lo autoriza en la sesión de su banco con el [pago directo](/conceptos/pago-directo/).
+
+3. **Llega el abono.** El banco avisa la transferencia y Axiomic la
+   [compara con tus cobros](/conceptos/identificacion-de-abonos/). Si calza sin dudas, el cobro
+   queda `paid`. Si no, queda en revisión y una persona de tu equipo decide.
+
+4. **Recibes el webhook y el recibo.** `payment_intent.paid` llega firmado a tu backend con el
+   cobro, el abono y un [recibo verificable](/empezar/quickstart/#5-verifica-el-recibo) con la
+   llave pública de Axiomic.
+
+</Steps>
+
+## Axiomic no custodia dinero
+
+El dinero va del banco del pagador a la cuenta de tu comercio, sin pasar por Axiomic. Por eso
+un cobro se paga sólo cuando llega el abono: nunca por el aviso del pagador, por el regreso de su
+navegador a tu tienda ni por el envío de su banco.
+
+<Aside type="note" title="Hoy todo corre en modo de prueba">
+La API alojada responde con `"mode": "test"` y `"real_money_enabled": false`: banco simulado,
+datos sintéticos y ningún peso real. Las llaves `live` y el dinero real no son parte de esta
+versión. Mira [Modo de prueba](/conceptos/modo-de-prueba/).
+</Aside>
+
+## Los objetos
+
+| Objeto | Qué es | Prefijo |
+|---|---|---|
+| `payment_intent` | Lo que quieres cobrar: monto, referencia y vencimiento. | `pr_` |
+| `incoming_transfer` | Una transferencia que llegó a tu cuenta, avisada por tu banco. | `tr_` |
+| `checkout_session` | La página de pago de un cobro, abierta con su token. | — |
+| `receipt` | El comprobante firmado de un cobro pagado. | `rcpt_` |
+| `event` | Lo que pasó, en el feed y en los webhooks. | `evt_` |
+
+**Formato:** montos en CLP como enteros, sin decimales; fechas en ISO 8601 y UTC, terminadas en
+`Z`. El token de la página de pago tiene 32 caracteres y no se puede adivinar; nunca es el id del
+cobro.

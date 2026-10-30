@@ -1,0 +1,64 @@
+---
+title: Modo de prueba
+description: Simula transferencias, avisos duplicados y casos de borde sin mover dinero.
+sidebar:
+  order: 6
+---
+
+En modo de prueba el banco es simulado y ningún peso es real. Todo lo que simules pasa por las
+mismas reglas que un abono de verdad: aparece en la API, en el feed de eventos y en tus webhooks.
+
+## Simular que el pagador transfirió
+
+El atajo: paga un cobro con el monto exacto, en un paso.
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/checkout/sessions/$PAY_TOKEN/test_transfer"
+```
+
+## Simular un aviso a la medida
+
+`POST /v1/test/transfers` simula un aviso del banco a tu cuenta:
+
+```json
+{
+  "amount_clp": 34998,
+  "payer_rut": "12.345.678-5",
+  "payer_name": "Juana Pérez",
+  "alias": null,
+  "bank_tx_id": null,
+  "credited_offset_seconds": 0,
+  "delay_seconds": 0,
+  "copies": 1
+}
+```
+
+- `copies: 2` simula un aviso duplicado.
+- `delay_seconds` simula un aviso que llega tarde.
+- `credited_offset_seconds` mueve hacia atrás la hora de acreditación.
+
+Usa sólo RUTs y nombres sintéticos.
+
+## Escenarios
+
+`POST /v1/test/scenarios/{name}` juega un caso de borde completo en tu cuenta: crea sus cobros
+(con referencias `scn-…`) y encola sus avisos. Responde 202 con los ids de lo que creó.
+
+| Escenario | Qué pasa |
+|---|---|
+| `duplicate_notification` | El banco avisa dos veces el mismo abono; el cobro se paga una vez. |
+| `delayed_out_of_order` | El aviso del primer abono llega 60 s después del segundo; los dos cobros se pagan. |
+| `same_amount_two_payers` | Dos cobros del mismo precio: el monto único y el RUT los separan; un tercer pago va a revisión. |
+| `other_rut` | Otro RUT paga el monto exacto de un cobro con RUT esperado: va a revisión. |
+| `wrong_amount` | El pagador transfiere menos: el abono queda en revisión y el cobro vence. |
+| `unknown_transfer` | Llega un abono que no corresponde a ningún cobro. |
+| `fault_tour` | Los seis anteriores, cada uno con sus cobros. |
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/test/scenarios/fault_tour" \
+  -H "Authorization: Bearer $AXIOMIC_KEY"
+```
+
+Ningún escenario resuelve revisiones por ti: ese paso es de tu equipo. Los avisos simulados
+comparten un cupo de 60 por minuto y los escenarios tienen el suyo de 30 por hora
+([límites](/conceptos/llaves-y-modos/#límites)).

@@ -1,0 +1,267 @@
+---
+title: "Errores de la API de cobros"
+description: "Cada error de la API: su código estable, su HTTP, cuándo aparece y qué hacer."
+editUrl: false
+---
+
+{/* Sincronizado desde axiomic-backend 93c525dbbe53. Edita la guía allá, no aquí. */}
+Toda negativa responde con un código HTTP y un cuerpo como éste:
+
+```json
+{
+  "detail": "La llave de API no es válida.",
+  "code": "invalid_api_key",
+  "request_id": "req_2b20c348ab4eb2dcbbbcbdd8",
+  "doc_url": "https://docs.axiomic.cl/errores#invalid_api_key"
+}
+```
+
+- **Programa contra `code`.** Es estable y está en esta página. `detail` es para personas,
+  puede cambiar de redacción y nunca repite lo que enviaste.
+- Un 422 por esquema trae además `fields`: `[{loc, type}]`, sin los valores.
+- `request_id` es el mismo de la cabecera `X-Request-Id`, que llega en toda respuesta. Cítalo
+  al pedir ayuda: identifica la petición sin que tengas que enviar llaves ni datos.
+- `doc_url` lleva a la sección de esta página que explica el `code`.
+- **Un POST con resultado incierto no se repite a ciegas.** Con la misma `Idempotency-Key` y el
+  mismo cuerpo, repetir es seguro: devuelve la misma respuesta. Sin ella, consulta el estado
+  antes de volver a intentar.
+
+## Resumen
+
+| `code` | HTTP | ¿Repetir? |
+|---|---|---|
+| [`idempotency_key_required`](#idempotency_key_required) | 400 | Sí, con la cabecera |
+| [`invalid_api_key`](#invalid_api_key) | 401 | No: corrige la llave |
+| [`invalid_token`](#invalid_token) | 401 | No: corrige el token |
+| [`session_required`](#session_required) | 401 | No: envía el guard del intento |
+| [`forbidden_scope`](#forbidden_scope) | 403 | No: usa la llave `full` |
+| [`not_found`](#not_found) | 404 | No |
+| [`idempotency_key_reused`](#idempotency_key_reused) | 409 | No: es otra operación |
+| [`unique_amount_unavailable`](#unique_amount_unavailable) | 409 | Después, o con el RUT esperado |
+| [`invalid_state`](#invalid_state) | 409 | No: lee el estado |
+| [`amount_mismatch`](#amount_mismatch) | 409 | No: elige otro cobro o descarta |
+| [`bank_unavailable`](#bank_unavailable) | 409 | Con otro banco o medio |
+| [`session_expired`](#session_expired) | 409 | No: consulta el intento |
+| [`request_too_large`](#request_too_large) | 413 | No: achica el cuerpo |
+| [`invalid_request`](#invalid_request) | 422 | Tras corregir |
+| [`invalid_json`](#invalid_json) | 422 | Tras corregir |
+| [`invalid_rut`](#invalid_rut) | 422 | Tras corregir |
+| [`invalid_bank_login`](#invalid_bank_login) | 422 | Tras corregir |
+| [`bank_access_consent_required`](#bank_access_consent_required) | 422 | Tras aceptar el acceso |
+| [`bank_authorization_unrecognized`](#bank_authorization_unrecognized) | 422 | Tras corregir |
+| [`limit_reached`](#limit_reached) | 429 | No: libera cupo |
+| [`rate_limited`](#rate_limited) | 429 | Sí, después de `Retry-After` |
+| [`state_unverified`](#state_unverified) | 503 | Consulta antes de repetir |
+| [`bank_connector_unavailable`](#bank_connector_unavailable) | 503 | Con transferencia asistida |
+| [`bank_channel_unavailable`](#bank_channel_unavailable) | 503 | No: consulta el intento |
+
+## 400
+
+### `idempotency_key_required`
+
+**400.** Falta la cabecera `Idempotency-Key` en `POST /v1/payment_intents` o en
+`POST /v1/agent/payment_requests`.
+
+**Qué hacer:** envíala con 8 a 128 caracteres `[A-Za-z0-9_-]`. Usa un valor ligado a tu
+operación, como el id del pedido, para que un reintento después de una respuesta perdida
+devuelva el mismo cobro y no cree otro.
+
+## 401
+
+### `invalid_api_key`
+
+**401.** Falta `Authorization: Bearer axk_test_…`, no tiene ese formato, o la llave no existe
+o fue revocada.
+
+**Qué hacer:** revisa la llave que usa tu servidor. La llave nunca va en el navegador.
+
+### `invalid_token`
+
+**401.** En las rutas de agentes falta el token, no tiene el formato, no existe, o es del otro
+rol: el token del agente (`agt_test_…`) sólo pide y lee solicitudes; el de la persona
+(`hld_test_…`) lee, revoca, aprueba y rechaza.
+
+**Qué hacer:** usa el token que corresponde a la ruta. Los dos llegan una sola vez, al crear el
+mandato.
+
+### `session_required`
+
+**401.** Una ruta del pago directo (`…/attempts/{attempt_id}/bank…`) llegó sin
+`X-Axiomic-Bank-Session` o con el de otro intento.
+
+**Qué hacer:** reenvía el `bank_session_token` que devolvió la creación del intento; la página de pago lo guarda en una cookie `HttpOnly`. Si se perdió, ese intento ya no se maneja desde otro navegador:
+su estado sigue en `…/status`.
+
+## 403
+
+### `forbidden_scope`
+
+**403.** Una llave con alcance `agent` llamó a una ruta que exige la llave `full`: abonos,
+revisión, estado de cuenta, webhooks, eventos, `POST /v1/test/transfers` o
+`POST /v1/test/scenarios/{name}`.
+
+**Qué hacer:** llama a esas rutas desde tu backend con la llave `full`. La llave `agent` es la
+del MCP del comercio y sólo opera cobros.
+
+## 404
+
+### `not_found`
+
+**404.** El id no existe o es de otro comercio; Axiomic no distingue entre los dos casos. También
+para un token de checkout desconocido, un escenario de prueba que no existe y las rutas de
+prueba fuera de modo de prueba.
+
+**Qué hacer:** revisa el id o el token. No repitas.
+
+## 409
+
+### `idempotency_key_reused`
+
+**409.** La `Idempotency-Key` ya se usó con otro cuerpo; en una solicitud de agente, con otro
+checkout.
+
+**Qué hacer:** si es la misma operación, repite el cuerpo exacto y recibirás la respuesta
+original. Si es otra operación, usa otra llave.
+
+### `unique_amount_unavailable`
+
+**409.** No queda un monto único libre para ese precio en la cuenta: los montos de hasta $99
+bajo el precio están tomados por cobros abiertos del mismo precio.
+
+**Qué hacer:** indica `expected_payer_rut`, o espera que esos cobros se paguen o venzan.
+
+### `invalid_state`
+
+**409.** El estado actual no permite la acción: el cobro ya no está abierto, la solicitud del
+agente ya se decidió, hay un pago en curso esperando la confirmación del banco, el pago
+directo pide otro paso primero, o pides un evento de prueba sin un webhook registrado.
+
+**Qué hacer:** lee el estado (`GET /v1/payment_intents/{id}`, `…/status` o `…/bank`) y sigue
+desde ahí. Nunca lo resuelvas creando otro pago. Para el evento de prueba, registra primero el
+webhook con `POST /v1/webhook_endpoints`.
+
+### `amount_mismatch`
+
+**409.** Al resolver una revisión con `assign`, el monto del abono no es el `final_amount_clp`
+del cobro elegido.
+
+**Qué hacer:** asígnalo al cobro que corresponde o descártalo con `dismiss`.
+
+### `bank_unavailable`
+
+**409.** El banco elegido no está disponible ahora, o no ofrece el pago directo en este momento.
+
+**Qué hacer:** ofrece otro banco o la transferencia asistida (`connector: "assisted"`).
+`GET /v1/banks` dice qué está disponible.
+
+### `session_expired`
+
+**409.** La sesión con el banco terminó: pasaron los 5 minutos desde el ingreso, venció el cobro
+o el servicio se reinició.
+
+**Qué hacer:** consulta `…/status` o `…/bank`. Si el intento quedó `outcome_unknown`, el banco
+pudo guardar la orden: no ofrezcas pagar de nuevo. Si no, el pagador puede empezar otro intento.
+
+## 413
+
+### `request_too_large`
+
+**413.** El cuerpo supera 16 KB.
+
+**Qué hacer:** envía sólo los campos del contrato; ningún cuerpo válido se acerca a ese límite.
+
+## 422
+
+### `invalid_request`
+
+**422.** La solicitud no cumple el contrato. Con `fields`, falló el esquema: un campo falta,
+sobra o tiene otro tipo. Sin `fields`, falló una regla: monto fuera de 100 a 50.000.000,
+referencia o vencimiento no válidos, `limit` fuera de 1 a 100, período distinto de `YYYY-MM`,
+un banco que no existe o no ofrece ese conector, un webhook que no es `https` público, una
+`Idempotency-Key` fuera de 8 a 128 caracteres `[A-Za-z0-9_-]` o un escenario de prueba que sólo
+corre en la simulación ([Modo de prueba](/conceptos/modo-de-prueba/)).
+
+**Qué hacer:** corrige según `fields` o `detail` y vuelve a enviar.
+
+### `invalid_json`
+
+**422.** El cuerpo no es JSON estricto: sintaxis inválida, llaves repetidas, `NaN` o `Infinity`,
+anidación excesiva o UTF-8 inválido.
+
+**Qué hacer:** serializa con una biblioteca JSON estándar y sin llaves duplicadas.
+
+### `invalid_rut`
+
+**422.** `expected_payer_rut`, o el `payer_rut` de un aviso simulado, no es un RUT válido: el
+dígito verificador no calza o el formato no es de RUT.
+
+**Qué hacer:** envíalo con o sin puntos y con guion, por ejemplo `12.345.678-5`.
+
+### `invalid_bank_login`
+
+**422.** En el pago directo, el RUT o la clave no tienen un formato válido. Una clave con
+formato correcto pero equivocada no da este error: el `bank_checkout` termina en
+`bank_access_unverified`, sin iniciar ninguna transferencia.
+
+**Qué hacer:** pide al pagador que revise lo que escribió. Nunca guardes ni registres la clave.
+
+### `bank_access_consent_required`
+
+**422.** `POST …/bank/login` llegó sin `access_consent_version: "bank-access-v1"`.
+
+**Qué hacer:** muestra el texto de consentimiento de `instructions.access_consent_text` y envía
+su versión cuando el pagador lo acepte.
+
+### `bank_authorization_unrecognized`
+
+**422.** La autorización no corresponde al desafío vigente: otro `challenge_id`, o un `code` que
+no tiene la forma pedida (`code_length` dígitos en `otp`, `null` en `bank_app`). En el banco
+simulado, una clave dinámica bien formada pero equivocada no da este error: el intento queda
+`outcome_unknown`.
+
+**Qué hacer:** reenvía el `challenge.id` del último `bank_checkout` y el código con su forma.
+
+## 429
+
+### `limit_reached`
+
+**429.** La cuenta llegó a 5.000 cobros abiertos, o el cobro llegó a 10 intentos del comprador.
+
+**Qué hacer:** cancela los cobros que ya no sirven o espera que venzan. Para un cobro sin
+intentos libres, crea otro cobro.
+
+### `rate_limited`
+
+**429.** Pasaste el límite por minuto de la credencial ([Llaves, modos y límites](/conceptos/llaves-y-modos/)): lecturas y escrituras
+del checkout por token, solicitudes por token de agente, creación de mandatos y eventos de
+prueba del webhook por comercio. También cuando el comercio de prueba gastó una de sus cuotas:
+cobros por día, avisos simulados por minuto, escenarios por hora o mandatos por día.
+
+**Qué hacer:** espera los segundos de `Retry-After` y repite. En la página de pago, respeta
+`poll_after_ms` y `ETag`: no hace falta consultar más seguido. Una cuota diaria puede pedir
+horas; para seguir probando, usa otro de tus comercios de prueba.
+
+## 503
+
+### `state_unverified`
+
+**503.** Axiomic no pudo confirmar el estado: la base o su esquema no responden como se espera,
+o no pudo leer la sesión del banco. **No significa que la operación falló.**
+
+**Qué hacer:** consulta el estado con un GET antes de repetir un POST. `GET /ready` dice si el
+servicio verifica su base.
+
+### `bank_connector_unavailable`
+
+**503.** El pago directo no está disponible con ese banco ahora: el servicio no lo ofrece, el
+banco está cortado o su conector no pudo empezar.
+
+**Qué hacer:** ofrece la transferencia asistida.
+
+### `bank_channel_unavailable`
+
+**503.** Axiomic no pudo comunicarse con el banco durante una acción del pago directo. El
+resultado puede ser desconocido.
+
+**Qué hacer:** no repitas el pago. Consulta `GET …/bank` o `…/status`; el cobro se paga sólo si
+llega el abono.

@@ -1,0 +1,39 @@
+---
+title: Pago directo
+description: El pagador autoriza en la sesión de su banco, sin copiar datos. Hoy contra el banco simulado.
+sidebar:
+  order: 7
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Con el pago directo, el pagador no copia datos de transferencia: ingresa a su banco desde la
+página de pago, elige su cuenta, revisa destinatario y monto, y autoriza con el factor de su banco
+(clave dinámica o aprobación en la app).
+
+<Aside type="note" title="Sólo contra el banco simulado">
+Esta versión ofrece el pago directo únicamente en modo de prueba, contra el banco simulado. Con
+bancos reales permanece apagado.
+</Aside>
+
+<Steps>
+
+1. `GET /v1/banks` dice qué bancos lo ofrecen (`direct.available: true`).
+2. El pagador elige «Pagar desde tu banco» y la página abre un intento `direct`, ligado a tu
+   comercio, el cobro, el banco, el monto, el destino y su consentimiento.
+3. Ingresa, elige la cuenta de origen y autoriza. Cualquier cambio en esos datos invalida la
+   sesión antes de escribir en el banco.
+4. El intento queda `submitted`: la orden llegó al banco. **Todavía no es un pago recibido.**
+5. Llega el abono, Axiomic lo calza y el cobro queda `paid`. Recibes `payment_intent.paid`.
+
+</Steps>
+
+## Lo que garantiza
+
+- **La clave del banco no se guarda.** La clave y el factor viven sólo en la petición que los
+  lleva: no se guardan, no se registran y nunca vuelven en una respuesta.
+- **El servidor fija el monto y el destino.** La página no los envía.
+- **Un resultado incierto no se repite.** Si el banco no confirma el resultado, el intento queda
+  `outcome_unknown` y nadie ofrece «Pagar de nuevo»: el banco pudo haber recibido la orden.
+  Axiomic consulta antes de asumir un rechazo.
+- **Enviado no es pagado.** Sólo `checkout_state: succeeded` significa que el abono llegó.

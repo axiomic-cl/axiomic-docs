@@ -1,0 +1,36 @@
+{
+  "name": "axiomic-docs",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Documentación pública de Axiomic: cobros por transferencia en Chile para devs y agentes.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/vendor-scalar.mjs && astro dev",
+    "sync": "node scripts/sync-backend.mjs",
+    "build": "node scripts/vendor-scalar.mjs && astro build && node scripts/check-site.mjs",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "node --test scripts/*.test.mjs access/*.test.mjs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.2",
+    "@astrojs/starlight": "0.42.6",
+    "@scalar/api-reference": "1.74.0",
+    "@scalar/astro": "0.4.29",
+    "astro": "7.4.0",
+    "sharp": "0.35.5",
+    "starlight-llms-txt": "0.12.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "typescript": "6.0.3",
+    "wrangler": "4.151.0"
+  },
+  "overrides": {
+    "undici@^7.0.0": "7.30.1"
+  }
+}

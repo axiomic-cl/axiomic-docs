@@ -1,0 +1,75 @@
+---
+title: Agentes y mandatos
+description: Deja que un agente de IA prepare pagos dentro de los límites que fija una persona.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Un **mandato** es el permiso que una persona le da a un agente de IA: en qué comercios puede
+comprar, cuánto por pago y en total, hasta cuándo, y desde qué monto debe aprobar ella primero.
+
+<Aside type="note" title="Un mandato nunca mueve dinero">
+El agente sólo pide preparar un pago. La persona siempre paga desde su banco, y el agente nunca
+recibe claves bancarias.
+</Aside>
+
+## Crear un mandato
+
+```json
+{
+  "label": "Compras del hogar",
+  "allowed_merchants": ["mer_000001"],
+  "per_payment_limit_clp": 50000,
+  "total_limit_clp": 100000,
+  "confirm_above_clp": 20000,
+  "expires_in_seconds": 604800
+}
+```
+
+`POST /v1/agent/mandates` responde **una sola vez** dos tokens; Axiomic guarda sólo sus hashes:
+
+| Token | Para | Puede |
+|---|---|---|
+| `agt_test_…` | El agente | Pedir que se prepare un pago y leer sus solicitudes. |
+| `hld_test_…` | La persona | Leer el mandato, revocarlo, aprobar y rechazar. Nunca se entrega al agente. |
+
+Reglas: `confirm_above_clp ≤ per_payment_limit_clp ≤ total_limit_clp`; con `confirm_above_clp: 0`
+todo pago espera aprobación. De 1 a 20 comercios y de 5 minutos a 30 días de vigencia (7 días
+por defecto).
+
+## Pedir un pago
+
+El agente encuentra un cobro abierto, por ejemplo el `pay_url` que le dio la tienda, y pide
+prepararlo con su token:
+
+```sh
+curl -X POST "$AXIOMIC_API/v1/agent/payment_requests" \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Idempotency-Key: compra-1042" \
+  -H "Content-Type: application/json" \
+  -d '{"checkout_token": "p8Kq2vX9rT4mN7bW1cZ5yH3jL6dF0sAe"}'
+```
+
+| `state` | Qué significa |
+|---|---|
+| `approved` | Dentro del mandato y bajo `confirm_above_clp`. Trae `checkout.pay_url` para que la persona pague. |
+| `pending_approval` | Espera a la persona en `GET /v1/agent/approvals?state=pending_approval`. |
+| `refused` | Fuera del mandato, con `reason`: `mandate_revoked`, `mandate_expired`, `merchant_not_allowed`, `payment_not_open`, `over_per_payment_limit` u `over_total_limit`. |
+| `rejected` | La persona dijo que no. |
+
+Aprobar no paga: el cobro sigue abierto hasta que llega el abono. Un checkout tiene a lo más una
+solicitud viva por mandato, así que un cobro se compromete una sola vez.
+
+## Llaves de comercio con alcance `agent`
+
+Del lado del comercio, un agente de IA usa una llave con alcance `agent`: crea, lee y cancela
+cobros, pero no resuelve revisiones ni cambia webhooks. Del lado del pagador, el agente usa su
+`agt_test_…` para preparar pagos y consultar su estado. Ninguno aprueba, autoriza en un banco,
+mueve dinero ni recibe claves bancarias.
+
+<Aside type="tip" title="Próximamente: servidor MCP">
+Un servidor MCP alojado, con estas mismas herramientas y OAuth, viene después. Mientras tanto, tu
+agente llama a estas rutas directamente.
+</Aside>

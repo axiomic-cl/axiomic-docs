@@ -1,0 +1,37 @@
+---
+title: Pedir acceso
+description: Pide tu llave de prueba para la API alojada de Axiomic.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import AccessForm from '../../../components/AccessForm.astro';
+
+La API alojada (`https://api.axiomic.cl`) corre en modo de prueba. Para usarla necesitas una llave
+`axk_test_…` de un comercio de prueba. Mientras construimos el panel, la emitimos nosotros: cuéntanos
+quién eres y qué quieres construir, y te escribimos con tu llave y las cuotas de tu comercio de
+prueba.
+
+<AccessForm />
+
+<div data-access-fallback>
+	Escríbenos a [contact@axiomic.cl](mailto:contact@axiomic.cl?subject=Acceso%20a%20la%20API%20de%20prueba)
+	con tu nombre, tu empresa y qué quieres construir.
+</div>
+
+<Aside type="caution" title="Sólo datos de prueba">
+No pongas datos de tus clientes en esta solicitud ni en el modo de prueba: usa sólo datos
+sintéticos.
+</Aside>
+
+Con tu llave, sigue el [Quickstart](/empezar/quickstart/).
+
+## Privacidad
+
+- **Responsable:** Axiomic. Para ejercer tus derechos de acceso, rectificación, supresión u
+  oposición, escribe a [contact@axiomic.cl](mailto:contact@axiomic.cl).
+- **Qué guardamos:** tu correo, tu nombre, tu empresa y lo que nos cuentas de tu proyecto.
+- **Para qué:** sólo para emitir tu llave de prueba y escribirte sobre tu acceso. No lo usamos para
+  publicidad ni lo compartimos.
+- **Cuánto tiempo:** 90 días desde que lo envías; después se borra.
+- **Dónde:** en Cloudflare, en una base del este de Estados Unidos. Cloudflare Turnstile verifica
+  que no seas un bot.

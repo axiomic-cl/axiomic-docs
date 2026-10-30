@@ -35,6 +35,24 @@ npm run dev
 Si la sincronización falla porque una guía del backend cambió de forma, ajusta
 `scripts/sync-lib.mjs` y su prueba: es mejor que publicar pasos viejos.
 
+## «Pedir acceso»
+
+El formulario de [/empezar/pedir-acceso/](src/content/docs/empezar/pedir-acceso.mdx) envía a la
+Pages Function [`functions/solicitudes.js`](functions/solicitudes.js). La Function valida los campos,
+comprueba el desafío de Turnstile (hostname `docs.axiomic.cl` y acción `pedir-acceso`) y guarda la
+solicitud en D1 por 90 días. La lógica vive en [`access/request.mjs`](access/request.mjs), con sus
+pruebas.
+
+Los bindings (`ACCESS_DB`, `TURNSTILE_SITE_KEY` y `TURNSTILE_SECRET_KEY`) los define
+`axiomic-infra` solo para producción. En un preview o en local, el formulario queda oculto y la
+página muestra el correo.
+
+## Publicación
+
+Cada push a `main` construye el sitio y lo sube a Cloudflare Pages con `wrangler pages deploy`.
+Usa el secreto `CLOUDFLARE_PAGES_TOKEN`, un token que solo tiene *Cloudflare Pages: Edit*, y la
+variable `CLOUDFLARE_ACCOUNT_ID`.
+
 ## Contribuir
 
 Abre un PR contra `main`. El CI construye el sitio y verifica enlaces, anclas y códigos de error.
