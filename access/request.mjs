@@ -1,5 +1,7 @@
-// «Pedir acceso»: validate a request, check its Turnstile challenge and keep it in D1 for
-// 90 days. Pure apart from the D1 binding and the fetch it is handed, so it runs under
+import { notifyTeam } from './notify.mjs';
+
+// «Pedir acceso»: validate a request, check its Turnstile challenge, keep it in D1 for
+// 90 days and email the team. Pure apart from the D1 binding and the fetch it is handed, so it runs under
 // `node --test` as well as in the Pages Function (functions/solicitudes.js).
 
 export const HOSTNAME = 'docs.axiomic.cl';
@@ -108,7 +110,7 @@ export async function readBounded(request, max) {
 }
 
 /** POST: keep one access request. Never echoes what was sent, never logs it. */
-export async function submit(request, env, { now, fetchImpl }) {
+export async function submit(request, env, { now, fetchImpl, waitUntil }) {
 	// Preview deployments have neither binding: the form fails closed there.
 	if (!env.ACCESS_DB || !env.TURNSTILE_SECRET_KEY) return json(503, { error: 'unavailable' });
 	if (request.headers.get('Origin') !== `https://${HOSTNAME}`) return json(403, { error: 'forbidden' });
@@ -143,5 +145,7 @@ export async function submit(request, env, { now, fetchImpl }) {
 	} catch {
 		return json(503, { error: 'unavailable' });
 	}
+	// After the response: the notice never delays or fails the form.
+	waitUntil(notifyTeam({ ...checked.value, created_at: now.toISOString() }, env, fetchImpl));
 	return json(201, { ok: true });
 }

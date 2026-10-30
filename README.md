@@ -40,11 +40,14 @@ Si la sincronización falla porque una guía del backend cambió de forma, ajust
 El formulario de [/empezar/pedir-acceso/](src/content/docs/empezar/pedir-acceso.mdx) envía a la
 Pages Function [`functions/solicitudes.js`](functions/solicitudes.js). La Function valida los campos,
 comprueba el desafío de Turnstile (hostname `docs.axiomic.cl` y acción `pedir-acceso`) y guarda la
-solicitud en D1 por 90 días. La lógica vive en [`access/request.mjs`](access/request.mjs), con sus
-pruebas.
+solicitud en D1 por 90 días. Después de responder, avisa al equipo por correo con Resend
+([`access/notify.mjs`](access/notify.mjs)): texto plano, con `Reply-To` al solicitante. Si el aviso
+falla, la solicitud igual queda guardada. La lógica vive en
+[`access/request.mjs`](access/request.mjs), con sus pruebas.
 
-Los bindings (`ACCESS_DB`, `TURNSTILE_SITE_KEY` y `TURNSTILE_SECRET_KEY`) los define
-`axiomic-infra` solo para producción. En un preview o en local, el formulario queda oculto y la
+Los bindings (`ACCESS_DB`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` y, para el aviso,
+`RESEND_KEY` y `NOTIFY_TO`) los define `axiomic-infra` solo para producción. Sin `RESEND_KEY` o
+`NOTIFY_TO`, el formulario funciona igual y no envía correo. En un preview o en local, el formulario queda oculto y la
 página muestra el correo.
 
 ## Publicación
