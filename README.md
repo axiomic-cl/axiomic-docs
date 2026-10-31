@@ -33,7 +33,8 @@ npm run dev
 - **El resto se escribe aquí:** la portada, los conceptos, «Pedir acceso» y las novedades.
 
 Si la sincronización falla porque una guía del backend cambió de forma, ajusta
-`scripts/sync-lib.mjs` y su prueba: es mejor que publicar pasos viejos.
+`scripts/sync-lib.mjs` y su prueba: es mejor que publicar pasos viejos. Si falla porque una página
+aún cita algo interno, corrige la frase en la guía del backend: este repositorio no la reescribe.
 
 ## «Pedir acceso»
 

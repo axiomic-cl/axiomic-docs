@@ -103,51 +103,10 @@ function replaceOnce(body, pattern, replacement, what) {
 	return body.replace(pattern, replacement);
 }
 
-/** A literal phrase as a pattern that tolerates a different line wrap. */
-function phrase(text) {
-	return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'));
-}
-
 /**
- * Sentences of the backend guides written for the private repository or the pay page's own
- * backend, with their public wording. Each must still be there, so a reworded guide is
- * reviewed instead of published as is; delete an entry once the backend says it publicly.
+ * What a public page must never carry: backend paths, local setup and internal services.
+ * The backend guides word their own sentences publicly; a match here is fixed there.
  */
-export const PAGE_TEXT = {
-	'quickstart.md': [
-		[
-			'Las reglas completas están en el [contrato v1](../payments-api-spec-v1.md).',
-			'Las rutas y los esquemas están en la [referencia de la API](../payments-api-spec-v1.md).',
-		],
-		[
-			'Si no llega en 30 segundos, revisa que el servicio siga corriendo.',
-			'Si no llega en 30 segundos, vuelve a consultar.',
-		],
-		[
-			'[Contrato v1](../payments-api-spec-v1.md): estados, revisión de abonos, comisiones y errores.',
-			'[Referencia de la API](../payments-api-spec-v1.md): rutas, esquemas, estados y errores.',
-		],
-		[
-			'[Widget de pago](widget.md): el checkout en un modal en escritorio y por redirección en móvil, con los mensajes que recibe tu tienda.',
-			'[Página de pago](widget.md): cómo vuelve el pagador a tu tienda y quién puede incrustarla.',
-		],
-	],
-	'errores.md': [
-		[' En las rutas internas del alta del sandbox, falta la credencial de servicio del BFF (`axs_test_…`) o no coincide.', ''],
-		['tu BFF lo guarda en una cookie `HttpOnly`.', 'la página de pago lo guarda en una cookie `HttpOnly`.'],
-		[' En el alta interna del sandbox, el dueño ya tiene 3 comercios de prueba, o el comercio ya tiene 2 llaves vigentes con ese alcance.', ''],
-		[' Para emitir otra llave, revoca antes una de las vigentes.', ''],
-	],
-};
-
-export function publicWording(name, body) {
-	return (PAGE_TEXT[name] ?? []).reduce(
-		(page, [internal, wording]) => replaceOnce(page, phrase(internal), wording, `"${internal.slice(0, 40)}…"`),
-		body,
-	);
-}
-
-/** What a public page must never carry: backend paths, local setup and internal services. */
 const INTERNAL = [
 	[/\bBFF\b/, 'the pay page BFF'],
 	[/axs_test_/, 'the sandbox service credential'],
@@ -236,7 +195,7 @@ export function frontmatter({ title, description, sourceCommit }) {
 /** Whole page for one backend guide. */
 export function toPage(name, markdown, sourceCommit) {
 	const { title, body } = takeTitle(markdown);
-	let page = publicWording(name, dropCiComments(body));
+	let page = dropCiComments(body);
 	if (name === 'quickstart.md') page = hostQuickstart(dropBackendCiNote(page));
 	if (name === 'errores.md') page = dropErrorCatalogNote(page);
 	page = assertPublic(name, linkContractSections(rewriteLinks(page)));
